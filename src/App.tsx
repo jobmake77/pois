@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HomeScreen } from "./components/HomeScreen";
 import { EditorScreen } from "./components/EditorScreen";
 import { ExportSheet } from "./components/ExportSheet";
@@ -10,44 +10,55 @@ import {
   themePresets
 } from "./presets";
 import { renderToBlobOnMain, renderToCanvas } from "./render/engine";
-import { clamp } from "./render/random";
+import { getSuggestedEditorState } from "./render/blockLayout";
 import { canUseWorkerExport, exportWithWorker } from "./render/workerClient";
+import { clamp } from "./render/random";
 import type {
-  CandidatePreview,
   CanvasPreset,
   ExportPreview,
-  LayoutSettings,
+  LayoutDirection,
+  LayoutMode,
   PanelKey,
+  PhotoCrop,
   ProjectState,
   Screen,
   SourceAsset,
   ThemePreset
 } from "./types";
 
-const DEMO_IMAGE_URL =
-  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iMTA0MCIgdmlld0JveD0iMCAwIDgwMCAxMDQwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIHN0b3AtY29sb3I9IiM2NUE4RUYiLz48c3RvcCBvZmZzZXQ9IjAuNTUiIHN0b3AtY29sb3I9IiMzNjdFOTUiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNFM0Y3RkIiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjEwNDAiIGZpbGw9InVybCgjZykiLz48cmVjdCB5PSI2NjAiIHdpZHRoPSI4MDAiIGhlaWdodD0iMzcwIiBmaWxsPSIjMkI2Rjg5Ii8+PHJlY3QgeT0iNjkwIiB3aWR0aD0iODAwIiBoZWlnaHQ9IjI4IiBmaWxsPSIjRjNGMEUzIi8+PHJlY3QgeT0iNzU4IiB3aWR0aD0iODAwIiBoZWlnaHQ9IjI4IiBmaWxsPSIjRjNGMEUzIi8+PHJlY3QgeT0iODI2IiB3aWR0aD0iODAwIiBoZWlnaHQ9IjI4IiBmaWxsPSIjRjNGMEUzIi8+PHJlY3QgeT0iODk0IiB3aWR0aD0iODAwIiBoZWlnaHQ9IjI4IiBmaWxsPSIjRjNGMEUzIi8+PHBhdGggZD0iTTIxMiAxOTVsMjQgNDggNTIgNy0zOCAzNCAxMCA1Mi00OC0yNi00OCAyNiAxMC01Mi0zOC0zNCA1Mi03eiIgZmlsbD0iI0YzRjBFMyIvPjxjaXJjbGUgY3g9IjYxNiIgY3k9IjIwOCIgcj0iMzUiIGZpbGw9IiNGM0YwRTMiLz48L3N2Zz4=";
-
 const DRAFT_KEY = "pois-art:last-project";
+const MAX_PHOTOS = 2;
 
 interface SavedDraft {
-  themeId: string;
-  layout: LayoutSettings;
-  base: ProjectState["base"];
-  dots: ProjectState["dots"];
-  canvasWidth: number;
-  canvasHeight: number;
-  exportFormat: ProjectState["exportFormat"];
+  themeId?: string;
+  layoutMode?: LayoutMode;
+  layoutDirection?: LayoutDirection;
+  fillBlockEnabled?: boolean;
+  fillBlockDotsEnabled?: boolean;
+  layout?: ProjectState["layout"];
+  base?: ProjectState["base"];
+  dots?: ProjectState["dots"];
+  exportFormat?: ProjectState["exportFormat"];
 }
 
+type FilePickerMode = "replace" | "append";
+
 function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectState {
-  const canvasPreset = draft?.layout.canvasPreset ?? theme.layout.canvasPreset ?? defaultLayout.canvasPreset;
+  const suggested = getSuggestedEditorState(0);
+  const canvasPreset =
+    draft?.layout?.canvasPreset ?? theme.layout.canvasPreset ?? defaultLayout.canvasPreset;
   const canvas = getCanvasDimensions(canvasPreset);
 
   return {
     id: `project-${Date.now()}`,
     themeId: draft?.themeId ?? theme.id,
-    sourceIds: [],
-    activeSourceId: "",
+    photoIds: [],
+    activePhotoId: "",
+    photoCrops: {},
+    layoutMode: draft?.layoutMode ?? suggested.layoutMode,
+    layoutDirection: draft?.layoutDirection ?? suggested.layoutDirection,
+    fillBlockEnabled: draft?.fillBlockEnabled ?? suggested.fillBlockEnabled,
+    fillBlockDotsEnabled: draft?.fillBlockDotsEnabled ?? true,
     layout: {
       ...defaultLayout,
       ...theme.layout,
@@ -67,8 +78,8 @@ function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectSt
       ...theme.dots,
       ...draft?.dots
     },
-    canvasWidth: draft?.canvasWidth ?? canvas.width,
-    canvasHeight: draft?.canvasHeight ?? canvas.height,
+    canvasWidth: canvas.width,
+    canvasHeight: canvas.height,
     exportFormat: draft?.exportFormat ?? "png"
   };
 }
@@ -76,41 +87,33 @@ function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectSt
 export default function App() {
   const initialDraft = readDraft();
   const initialTheme = getThemeById(initialDraft?.themeId ?? themePresets[0].id);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [screen, setScreen] = useState<Screen>("home");
-  const [sources, setSources] = useState<SourceAsset[]>([]);
   const [project, setProject] = useState<ProjectState>(() =>
     createInitialProject(initialTheme, initialDraft)
   );
+  const [screen, setScreen] = useState<Screen>("home");
+  const [sources, setSources] = useState<SourceAsset[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>("layout");
   const [previewStatus, setPreviewStatus] = useState("等待图片上传");
   const [renderTime, setRenderTime] = useState<number | null>(null);
   const [exportPending, setExportPending] = useState(false);
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [renderTick, setRenderTick] = useState(0);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const filePickerModeRef = useRef<FilePickerMode>("replace");
   const sourcesRef = useRef<SourceAsset[]>([]);
   const exportRef = useRef<ExportPreview | null>(null);
 
-  const deferredProject = useDeferredValue(project);
   const theme = useMemo(() => getThemeById(project.themeId), [project.themeId]);
-  const deferredTheme = useMemo(
-    () => getThemeById(deferredProject.themeId),
-    [deferredProject.themeId]
-  );
   const activeSources = useMemo(
     () =>
-      project.sourceIds
+      project.photoIds
         .map((id) => sources.find((source) => source.id === id))
         .filter(Boolean) as SourceAsset[],
-    [project.sourceIds, sources]
+    [project.photoIds, sources]
   );
-  const candidates = useMemo(
-    () => buildCandidates(project.activeSourceId, themePresets),
-    [project.activeSourceId]
-  );
-  const previewRatio = project.canvasWidth / project.canvasHeight;
 
   useEffect(() => {
     sourcesRef.current = sources;
@@ -134,27 +137,56 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "editor" || activeSources.length === 0 || !previewCanvasRef.current) {
+    if (screen !== "editor") {
       return;
     }
 
-    setPreviewStatus("生成预览中...");
     const canvas = previewCanvasRef.current;
-    const frameWidth = Math.min(window.innerWidth - 32, 520);
-    const frameHeight = Math.round(frameWidth / previewRatio);
+    const shell = canvas?.parentElement;
+    if (!canvas || !shell) {
+      return;
+    }
+
+    const updateSize = () => {
+      const width = Math.max(1, Math.round(shell.clientWidth));
+      const height = Math.max(1, Math.round(shell.clientHeight));
+      setPreviewSize((current) =>
+        current.width === width && current.height === height ? current : { width, height }
+      );
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(shell);
+    window.addEventListener("resize", updateSize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateSize);
+    };
+  }, [screen, project.canvasWidth, project.canvasHeight]);
+
+  useEffect(() => {
+    if (
+      screen !== "editor" ||
+      activeSources.length === 0 ||
+      !previewCanvasRef.current ||
+      previewSize.width <= 0 ||
+      previewSize.height <= 0
+    ) {
+      return;
+    }
+
     const handle = window.setTimeout(async () => {
       const startedAt = performance.now();
+      setPreviewStatus("生成预览中...");
       try {
-        await renderToCanvas(canvas, {
-          project: deferredProject,
-          theme: deferredTheme,
-          sources: selectSourcesForComposition(
-            activeSources,
-            deferredProject.layout.compositionMode,
-            deferredProject.activeSourceId
-          ),
-          width: frameWidth,
-          height: frameHeight,
+        await renderToCanvas(previewCanvasRef.current!, {
+          project,
+          theme,
+          sources: activeSources,
+          width: previewSize.width,
+          height: previewSize.height,
           pixelRatio: Math.min(window.devicePixelRatio || 1, 2)
         });
         setPreviewStatus("预览已更新");
@@ -163,28 +195,95 @@ export default function App() {
         console.error(error);
         setPreviewStatus("预览失败，请换一张图试试");
       }
-    }, 80);
+    }, 50);
 
     return () => window.clearTimeout(handle);
-  }, [screen, deferredProject, activeSources, deferredTheme, renderTick, previewRatio]);
+  }, [screen, activeSources, previewSize, project, renderTick, theme]);
+
+  const openPicker = (mode: FilePickerMode) => {
+    filePickerModeRef.current = mode;
+    fileInputRef.current?.click();
+  };
+
+  const syncProjectWithSources = (
+    current: ProjectState,
+    nextPhotoIds: string[],
+    nextPhotoCrops: Record<string, PhotoCrop>,
+    preferredActiveId?: string
+  ): ProjectState => {
+    if (nextPhotoIds.length === 0) {
+      const suggested = getSuggestedEditorState(0);
+      return {
+        ...current,
+        photoIds: [],
+        activePhotoId: "",
+        photoCrops: {},
+        layoutMode: suggested.layoutMode,
+        layoutDirection: suggested.layoutDirection,
+        fillBlockEnabled: suggested.fillBlockEnabled
+      };
+    }
+
+    const suggested = getSuggestedEditorState(nextPhotoIds.length);
+    const activePhotoId =
+      preferredActiveId && nextPhotoIds.includes(preferredActiveId)
+        ? preferredActiveId
+        : nextPhotoIds[0];
+
+    return {
+      ...current,
+      photoIds: nextPhotoIds,
+      activePhotoId,
+      photoCrops: nextPhotoCrops,
+      layoutMode: suggested.layoutMode,
+      layoutDirection: suggested.layoutDirection,
+      fillBlockEnabled: suggested.fillBlockEnabled
+    };
+  };
 
   const handleFiles = async (files: FileList | File[]) => {
-    const assets = await Promise.all(Array.from(files).map(loadSourceAsset));
-    if (assets.length === 0) {
+    const loadedAssets = await Promise.all(Array.from(files).map(loadSourceAsset));
+    if (loadedAssets.length === 0) {
       return;
     }
 
-    setSources((current) => [...current, ...assets]);
+    const replaceExisting = filePickerModeRef.current === "replace";
+    const existingSources = replaceExisting ? [] : sourcesRef.current;
+    const allowedCount = Math.max(0, MAX_PHOTOS - existingSources.length);
+    const acceptedAssets = loadedAssets.slice(0, allowedCount);
+
+    if (replaceExisting) {
+      sourcesRef.current.forEach((source) => URL.revokeObjectURL(source.objectUrl));
+      if (exportPreview) {
+        URL.revokeObjectURL(exportPreview.url);
+        setExportPreview(null);
+      }
+    }
+
+    if (acceptedAssets.length === 0) {
+      setPreviewStatus(`最多添加 ${MAX_PHOTOS} 张图片`);
+      return;
+    }
+
+    const nextSources = [...existingSources, ...acceptedAssets];
+    sourcesRef.current = nextSources;
+    setSources(nextSources);
     setProject((current) => {
-      const nextIds = [...current.sourceIds, ...assets.map((asset) => asset.id)];
-      return {
-        ...current,
-        sourceIds: nextIds,
-        activeSourceId: current.activeSourceId || assets[0].id
-      };
+      const baseIds = replaceExisting ? [] : current.photoIds;
+      const nextPhotoIds = [...baseIds, ...acceptedAssets.map((asset) => asset.id)];
+      const nextPhotoCrops: Record<string, PhotoCrop> = replaceExisting ? {} : { ...current.photoCrops };
+      acceptedAssets.forEach((asset) => {
+        nextPhotoCrops[asset.id] = { x: 0, y: 0, scale: 1 };
+      });
+      return syncProjectWithSources(current, nextPhotoIds, nextPhotoCrops, nextPhotoIds[0]);
     });
+    setActivePanel("layout");
     setScreen("editor");
-    setPreviewStatus("已接收素材，准备生成...");
+    setPreviewStatus(
+      acceptedAssets.length < loadedAssets.length
+        ? `已添加 ${acceptedAssets.length} 张，当前最多 ${MAX_PHOTOS} 张`
+        : "已接收素材，准备生成..."
+    );
     setRenderTick((current) => current + 1);
   };
 
@@ -193,13 +292,6 @@ export default function App() {
     setProject((current) => ({
       ...current,
       themeId,
-      layout: {
-        ...current.layout,
-        ...nextTheme.layout,
-        cropX: current.layout.cropX,
-        cropY: current.layout.cropY,
-        canvasPreset: current.layout.canvasPreset
-      },
       base: {
         ...current.base,
         primaryColor: nextTheme.palette.primary,
@@ -212,19 +304,7 @@ export default function App() {
         ...nextTheme.dots
       }
     }));
-  };
-
-  const handleCanvasPresetChange = (preset: CanvasPreset) => {
-    const canvas = getCanvasDimensions(preset);
-    setProject((current) => ({
-      ...current,
-      canvasWidth: canvas.width,
-      canvasHeight: canvas.height,
-      layout: {
-        ...current.layout,
-        canvasPreset: preset
-      }
-    }));
+    setRenderTick((current) => current + 1);
   };
 
   const handleRandomize = () => {
@@ -241,21 +321,19 @@ export default function App() {
     if (activeSources.length === 0) {
       return;
     }
+
     setExportPending(true);
     setPreviewStatus("正在生成高清图...");
     if (exportPreview) {
       URL.revokeObjectURL(exportPreview.url);
       setExportPreview(null);
     }
+
     try {
       const renderInput = {
         project,
         theme,
-        sources: selectSourcesForComposition(
-          activeSources,
-          project.layout.compositionMode,
-          project.activeSourceId
-        ),
+        sources: activeSources,
         width: project.canvasWidth,
         height: project.canvasHeight,
         pixelRatio: 1,
@@ -280,6 +358,20 @@ export default function App() {
     }
   };
 
+  const updatePhotoCrop = (photoId: string, nextCrop: PhotoCrop) => {
+    setProject((current) => ({
+      ...current,
+      photoCrops: {
+        ...current.photoCrops,
+        [photoId]: {
+          x: clamp(Number(nextCrop.x.toFixed(3)), -1, 1),
+          y: clamp(Number(nextCrop.y.toFixed(3)), -1, 1),
+          scale: clamp(Number(nextCrop.scale.toFixed(3)), 1, 2.6)
+        }
+      }
+    }));
+  };
+
   const handleDownload = () => {
     if (!exportPreview) {
       return;
@@ -294,35 +386,28 @@ export default function App() {
     if (!exportPreview) {
       return;
     }
+
     const extension = project.exportFormat === "jpeg" ? "jpg" : "png";
     const mimeType = project.exportFormat === "jpeg" ? "image/jpeg" : "image/png";
-    const shareText = "用 Pois Art 做了一张波点海报。";
     const file = new File([exportPreview.blob], `pois-art.${extension}`, {
       type: mimeType
     });
+
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
       await navigator.share({
         title: "Pois Art 海报",
-        text: shareText,
+        text: "用 Pois Art 做了一张分块波点海报。",
         files: [file]
       });
       return;
     }
+
     handleDownload();
   };
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(
-      "用 Pois Art 做了一张双区波点海报，主图保留，底板和形状都可以自己调。"
-    );
+    await navigator.clipboard.writeText("用 Pois Art 做了一张分块波点海报。");
     setPreviewStatus("分享文案已复制");
-  };
-
-  const handleUseDemo = async () => {
-    const response = await fetch(DEMO_IMAGE_URL);
-    const blob = await response.blob();
-    const file = new File([blob], "demo-poster.jpg", { type: "image/jpeg" });
-    await handleFiles([file]);
   };
 
   return (
@@ -342,20 +427,14 @@ export default function App() {
         }}
       />
 
-      <div className="background-wash" />
-
       {screen === "home" ? (
-        <HomeScreen
-          onOpenFiles={() => fileInputRef.current?.click()}
-          onUseDemo={() => void handleUseDemo()}
-        />
+        <HomeScreen onOpenFiles={() => openPicker("replace")} />
       ) : (
         <EditorScreen
           project={project}
           theme={theme}
           themes={themePresets}
           sources={activeSources}
-          candidates={candidates}
           previewStatus={previewStatus}
           renderTime={renderTime}
           exportPending={exportPending}
@@ -366,79 +445,75 @@ export default function App() {
           onSelectSource={(sourceId) =>
             setProject((current) => ({
               ...current,
-              activeSourceId: sourceId
+              activePhotoId: sourceId
             }))
           }
           onDeleteSource={(sourceId) => {
-            const target = sources.find((source) => source.id === sourceId);
+            const target = sourcesRef.current.find((source) => source.id === sourceId);
             if (target) {
               URL.revokeObjectURL(target.objectUrl);
             }
-            const nextSources = sources.filter((source) => source.id !== sourceId);
+            const nextSources = sourcesRef.current.filter((source) => source.id !== sourceId);
+            sourcesRef.current = nextSources;
             setSources(nextSources);
             setProject((current) => {
-              const nextIds = current.sourceIds.filter((id) => id !== sourceId);
-              if (nextIds.length === 0) {
-                setScreen("home");
-                setPreviewStatus("等待图片上传");
-                return {
-                  ...current,
-                  sourceIds: [],
-                  activeSourceId: ""
-                };
-              }
-              const activeStillExists = nextIds.includes(current.activeSourceId);
-              return {
-                ...current,
-                sourceIds: nextIds,
-                activeSourceId: activeStillExists ? current.activeSourceId : nextIds[0]
-              };
+              const nextPhotoIds = current.photoIds.filter((id) => id !== sourceId);
+              const nextPhotoCrops = { ...current.photoCrops };
+              delete nextPhotoCrops[sourceId];
+              return syncProjectWithSources(current, nextPhotoIds, nextPhotoCrops, current.activePhotoId);
             });
-          }}
-          onCandidateSelect={(candidate) => {
-            setProject((current) => ({
-              ...current,
-              activeSourceId: candidate.sourceId,
-              dots: {
-                ...current.dots,
-                seed: defaultDots.seed + candidate.seedOffset
-              }
-            }));
-            handleThemeChange(candidate.themeId);
-          }}
-          onUpdateLayout={(patch) => {
-            if (patch.canvasPreset) {
-              handleCanvasPresetChange(patch.canvasPreset);
+            if (nextSources.length === 0) {
+              setScreen("home");
+              setPreviewStatus("等待图片上传");
             }
-            setProject((current) => ({
-              ...current,
-              layout: {
+          }}
+          onOpenMoreFiles={() => openPicker("append")}
+          onSetPhotoCrop={updatePhotoCrop}
+          onUpdateLayout={(patch) =>
+            setProject((current) => {
+              const nextLayout = {
                 ...current.layout,
                 ...patch
-              }
-            }));
-          }}
-          onAdjustCrop={(dx, dy) =>
+              };
+              const canvas = patch.canvasPreset
+                ? getCanvasDimensions(patch.canvasPreset)
+                : { width: current.canvasWidth, height: current.canvasHeight };
+              return {
+                ...current,
+                layout: nextLayout,
+                canvasWidth: canvas.width,
+                canvasHeight: canvas.height
+              };
+            })
+          }
+          onSetLayoutMode={(layoutMode) =>
             setProject((current) => ({
               ...current,
-              layout: {
-                ...current.layout,
-                cropX: clamp(current.layout.cropX + dx, -1, 1),
-                cropY: clamp(current.layout.cropY + dy, -1, 1)
-              }
+              layoutMode
+            }))
+          }
+          onSetLayoutDirection={(layoutDirection) =>
+            setProject((current) => ({
+              ...current,
+              layoutDirection
+            }))
+          }
+          onSetFillBlockEnabled={(fillBlockEnabled) =>
+            setProject((current) => ({
+              ...current,
+              fillBlockEnabled
+            }))
+          }
+          onSetFillBlockDotsEnabled={(fillBlockDotsEnabled) =>
+            setProject((current) => ({
+              ...current,
+              fillBlockDotsEnabled
             }))
           }
           onResetTheme={() => {
             const resetTheme = getThemeById(project.themeId);
             setProject((current) => ({
               ...current,
-              layout: {
-                ...defaultLayout,
-                ...resetTheme.layout,
-                cropX: 0,
-                cropY: 0,
-                canvasPreset: current.layout.canvasPreset
-              },
               base: {
                 ...defaultBase,
                 primaryColor: resetTheme.palette.primary,
@@ -452,7 +527,6 @@ export default function App() {
               }
             }));
           }}
-          onOpenMoreFiles={() => fileInputRef.current?.click()}
           onUpdateBase={(patch) =>
             setProject((current) => ({
               ...current,
@@ -479,7 +553,10 @@ export default function App() {
           }
           onRandomize={handleRandomize}
           onExport={() => void handleExport()}
-          onBack={() => setScreen("home")}
+          onBack={() => {
+            setScreen("home");
+            setPreviewStatus("等待图片上传");
+          }}
         />
       )}
 
@@ -544,34 +621,6 @@ async function extractDominantColor(image: HTMLImageElement) {
   return `rgb(${Math.round(red / count)}, ${Math.round(green / count)}, ${Math.round(blue / count)})`;
 }
 
-function selectSourcesForComposition(
-  sources: SourceAsset[],
-  mode: ProjectState["layout"]["compositionMode"],
-  activeSourceId?: string
-) {
-  if (sources.length === 0) {
-    return [];
-  }
-  const activeIndex =
-    activeSourceId != null ? Math.max(0, sources.findIndex((source) => source.id === activeSourceId)) : 0;
-  const rotated = [...sources.slice(activeIndex), ...sources.slice(0, activeIndex)];
-  const count = mode === "single" ? 1 : mode === "duo" ? 2 : 3;
-  return Array.from({ length: count }, (_, index) => rotated[index % rotated.length]).filter(Boolean);
-}
-
-function buildCandidates(sourceId: string, presets: ThemePreset[]): CandidatePreview[] {
-  if (!sourceId) {
-    return [];
-  }
-  return presets.slice(0, 8).map((theme, index) => ({
-    id: `${sourceId}-${theme.id}-${index}`,
-    sourceId,
-    themeId: theme.id,
-    label: `${theme.name} ${index % 2 === 0 ? "柔和版" : "跳色版"}`,
-    seedOffset: 11 * (index + 1)
-  }));
-}
-
 function getCanvasDimensions(preset: CanvasPreset) {
   if (preset === "square") {
     return { width: 1200, height: 1200 };
@@ -598,11 +647,13 @@ function persistDraft(project: ProjectState) {
   try {
     const draft: SavedDraft = {
       themeId: project.themeId,
+      layoutMode: project.layoutMode,
+      layoutDirection: project.layoutDirection,
+      fillBlockEnabled: project.fillBlockEnabled,
+      fillBlockDotsEnabled: project.fillBlockDotsEnabled,
       layout: project.layout,
       base: project.base,
       dots: project.dots,
-      canvasWidth: project.canvasWidth,
-      canvasHeight: project.canvasHeight,
       exportFormat: project.exportFormat
     };
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));

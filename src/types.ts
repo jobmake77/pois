@@ -3,10 +3,11 @@ export type ShapeKind = "star" | "drop" | "snowflake" | "circle" | "square";
 export type BaseStyle = "solid" | "stripes" | "duotone" | "pixel";
 export type Distribution = "random" | "grid" | "bottom-heavy";
 export type FillMode = "image-cutout" | "color-sample" | "solid";
-export type CompositionMode = "single" | "duo" | "triptych";
-export type PanelKey = "layout" | "base" | "dots";
+export type PanelKey = "layout" | "fill" | "dots";
 export type CanvasPreset = "poster" | "square" | "story" | "landscape";
 export type ExportFormat = "png" | "jpeg";
+export type LayoutMode = "single" | "double";
+export type LayoutDirection = "horizontal" | "vertical";
 
 export interface SourceAsset {
   id: string;
@@ -21,12 +22,9 @@ export interface SourceAsset {
 }
 
 export interface LayoutSettings {
-  splitRatio: number;
   padding: number;
-  cropX: number;
-  cropY: number;
-  decorativeEverywhere: boolean;
-  compositionMode: CompositionMode;
+  gap: number;
+  fillRatio: number;
   canvasPreset: CanvasPreset;
 }
 
@@ -45,12 +43,18 @@ export interface DotSettings {
   dotCount: number;
   decorativeCount: number;
   distribution: Distribution;
-  topShare: number;
-  topDistribution: Distribution;
-  bottomDistribution: Distribution;
+  primaryBlockShare: number;
+  photoBlockDistribution: Distribution;
+  fillBlockDistribution: Distribution;
   fillMode: FillMode;
   opacity: number;
   seed: number;
+}
+
+export interface PhotoCrop {
+  x: number;
+  y: number;
+  scale: number;
 }
 
 export interface ThemePalette {
@@ -73,8 +77,13 @@ export interface ThemePreset {
 export interface ProjectState {
   id: string;
   themeId: string;
-  sourceIds: string[];
-  activeSourceId: string;
+  photoIds: string[];
+  activePhotoId: string;
+  photoCrops: Record<string, PhotoCrop>;
+  layoutMode: LayoutMode;
+  layoutDirection: LayoutDirection;
+  fillBlockEnabled: boolean;
+  fillBlockDotsEnabled: boolean;
   layout: LayoutSettings;
   base: BaseSettings;
   dots: DotSettings;
@@ -122,12 +131,4 @@ export interface WorkerRenderInput {
   pixelRatio: number;
   exportQuality?: number;
   exportType?: string;
-}
-
-export interface CandidatePreview {
-  id: string;
-  sourceId: string;
-  themeId: string;
-  label: string;
-  seedOffset: number;
 }

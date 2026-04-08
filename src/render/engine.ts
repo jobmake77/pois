@@ -1,41 +1,26 @@
 import type {
   BaseStyle,
   Distribution,
-  FillMode,
+  PhotoCrop,
   RenderInput,
   SourceAsset
 } from "../types";
+import { resolveCanvasRegions, type CanvasRegion, type Rect } from "./blockLayout";
 import { clamp, lerp, mulberry32 } from "./random";
 import { createShapePath } from "./shapes";
 
-interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface Point {
-  x: number;
-  y: number;
-}
-
 interface DistributionOptions {
   minDistance: number;
-  overflowTop?: number;
-  overflowBottom?: number;
   verticalBias?: "top" | "bottom" | "center";
+  avoidCenter?: number;
 }
 
 interface Sampler {
-  image: CanvasImageSource;
-  canvas: HTMLCanvasElement | OffscreenCanvas;
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 }
 
 interface CanvasSource {
   id: string;
-  name: string;
   width: number;
   height: number;
   image: CanvasImageSource;
@@ -140,201 +125,83 @@ export async function drawPoster(
   input: RenderInput
 ) {
   const sources = normalizeSources(input.sources);
-  const theme = input.theme;
-  const { width, height } = input;
-  const layout = input.project.layout;
-  const base = input.project.base;
-  const dots = input.project.dots;
-  const rng = mulberry32(dots.seed);
+  const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const samplers = createSamplers(sources);
-
-  const contentRect: Rect = {
-    x: layout.padding,
-    y: layout.padding,
-    width: width - layout.padding * 2,
-    height: height - layout.padding * 2
-  };
-  const topRect: Rect = {
-    x: contentRect.x,
-    y: contentRect.y,
-    width: contentRect.width,
-    height: contentRect.height * layout.splitRatio
-  };
-  const bottomRect: Rect = {
-    x: contentRect.x,
-    y: topRect.y + topRect.height,
-    width: contentRect.width,
-    height: contentRect.height - topRect.height
-  };
+  const regions = resolveCanvasRegions(input.project, input.width, input.height);
+  const rng = mulberry32(input.project.dots.seed);
 
   context.save();
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = theme.palette.surface;
-  context.fillRect(0, 0, width, height);
+  context.clearRect(0, 0, input.width, input.height);
+  context.fillStyle = input.theme.palette.surface;
+  context.fillRect(0, 0, input.width, input.height);
   context.restore();
 
-  drawTopRegion(context, sources, topRect, layout.cropX, layout.cropY, layout.compositionMode);
-  drawBaseRegion(context, bottomRect, base.style, base.primaryColor, base.secondaryColor, base.stripeThickness);
-  const topShare =
-    layout.compositionMode === "single" && layout.splitRatio >= 0.54
-      ? Math.max(dots.topShare, 0.6)
-      : dots.topShare;
-  const topCount = Math.round(dots.dotCount * topShare);
-  const bottomCount = Math.max(0, dots.dotCount - topCount);
-
-  const topPoints = createDistribution(
-    dots.topDistribution,
-    topCount,
-    topRect,
-    rng,
-    {
-      minDistance: Math.max(10, dots.dotSize * 0.72),
-      overflowTop: topRect.height * 0.08,
-      overflowBottom: topRect.height * 0.04,
-      verticalBias: "top"
+  regions.forEach((region) => {
+    if (region.kind === "fill") {
+      drawFillRegion(
+        context,
+        region.rect,
+        input.project.base.style,
+        input.project.base.primaryColor,
+        input.project.base.secondaryColor,
+        input.project.base.stripeThickness
+      );
+      return;
     }
-  );
-  const bottomPoints = createDistribution(
-    dots.bottomDistribution,
-    bottomCount,
-    bottomRect,
-    rng,
-    {
-      minDistance: Math.max(12, dots.dotSize * 1.05),
-      verticalBias: dots.bottomDistribution === "bottom-heavy" ? "bottom" : "center"
-    }
-  );
 
-  drawSampleDots(context, input, sources, samplers, topRect, topPoints, rng, theme.palette.accent);
-  drawSampleDots(context, input, sources, samplers, bottomRect, bottomPoints, rng, theme.palette.accent);
-  drawDecorativeDots(context, input, topRect, bottomRect, rng, theme.palette);
+    const source = region.photoId ? sourceMap.get(region.photoId) : undefined;
+    if (!source) {
+      drawFallbackPhoto(context, region.rect, input.theme.palette.surface);
+      return;
+    }
+    const crop = input.project.photoCrops[source.id] ?? { x: 0, y: 0, scale: 1 };
+    drawCroppedImage(context, source.image, source.width, source.height, region.rect, crop);
+  });
+
+  drawShapeDots(context, input, regions, sources, sourceMap, samplers, rng);
 }
 
 function normalizeSources(sources: SourceAsset[]): CanvasSource[] {
   return sources.map((source) => ({
     id: source.id,
-    name: source.name,
     width: source.width,
     height: source.height,
     image: source.image
   }));
 }
 
-function createSamplers(sources: CanvasSource[]): Map<string, Sampler> {
+function createSamplers(sources: CanvasSource[]) {
   const map = new Map<string, Sampler>();
   for (const source of sources) {
     const size = 64;
-    const useOffscreen = typeof OffscreenCanvas !== "undefined";
-    const canvas = useOffscreen
-      ? new OffscreenCanvas(size, size)
-      : document.createElement("canvas");
-    if (!useOffscreen) {
-      (canvas as HTMLCanvasElement).width = size;
-      (canvas as HTMLCanvasElement).height = size;
+    const canvas =
+      typeof OffscreenCanvas !== "undefined"
+        ? new OffscreenCanvas(size, size)
+        : document.createElement("canvas");
+    if (canvas instanceof HTMLCanvasElement) {
+      canvas.width = size;
+      canvas.height = size;
     }
-    const context = canvas.getContext("2d");
-    if (!context) {
+    const samplerContext = canvas.getContext("2d");
+    if (!samplerContext) {
       continue;
     }
-    context.drawImage(source.image, 0, 0, size, size);
-    map.set(source.id, {
-      image: source.image,
-      canvas,
-      context
-    });
+    samplerContext.drawImage(source.image, 0, 0, size, size);
+    map.set(source.id, { context: samplerContext });
   }
   return map;
 }
 
-function drawTopRegion(
+function drawFallbackPhoto(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  sources: CanvasSource[],
   rect: Rect,
-  cropX: number,
-  cropY: number,
-  mode: "single" | "duo" | "triptych"
+  surface: string
 ) {
-  if (mode === "single") {
-    const source = sources[0];
-    if (!source) {
-      return;
-    }
-    drawCroppedImage(context, source.image, source.width, source.height, rect, cropX, cropY);
-    return;
-  }
-
-  if (mode === "duo") {
-    const [left, right] = [sources[0], sources[1] ?? sources[0]];
-    const gap = Math.max(6, rect.width * 0.012);
-    const leftWidth = rect.width * 0.62;
-    const rightWidth = rect.width - leftWidth - gap;
-    if (left) {
-      drawCroppedImage(
-        context,
-        left.image,
-        left.width,
-        left.height,
-        { x: rect.x, y: rect.y, width: leftWidth, height: rect.height },
-        cropX,
-        cropY
-      );
-    }
-    if (right) {
-      const upperHeight = rect.height * 0.58;
-      drawCroppedImage(
-        context,
-        right.image,
-        right.width,
-        right.height,
-        {
-          x: rect.x + leftWidth + gap,
-          y: rect.y,
-          width: rightWidth,
-          height: upperHeight
-        },
-        cropX * 0.8,
-        cropY * 0.8
-      );
-      drawCroppedImage(
-        context,
-        left.image,
-        left.width,
-        left.height,
-        {
-          x: rect.x + leftWidth + gap,
-          y: rect.y + upperHeight + gap,
-          width: rightWidth,
-          height: rect.height - upperHeight - gap
-        },
-        -cropX * 0.6,
-        cropY * 0.4
-      );
-    }
-    return;
-  }
-
-  const gap = Math.max(4, rect.width * 0.01);
-  const columnWidth = (rect.width - gap * 2) / 3;
-  for (let index = 0; index < 3; index += 1) {
-    const source = sources[index % sources.length];
-    if (!source) {
-      continue;
-    }
-    drawCroppedImage(
-      context,
-      source.image,
-      source.width,
-      source.height,
-      {
-        x: rect.x + index * (columnWidth + gap),
-        y: rect.y,
-        width: columnWidth,
-        height: rect.height
-      },
-      cropX * (index === 1 ? 1 : 0.7),
-      cropY
-    );
-  }
+  context.save();
+  clipToRect(context, rect);
+  context.fillStyle = surface;
+  context.fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
+  context.restore();
 }
 
 function drawCroppedImage(
@@ -343,28 +210,44 @@ function drawCroppedImage(
   naturalWidth: number,
   naturalHeight: number,
   rect: Rect,
-  cropX: number,
-  cropY: number
+  crop: PhotoCrop
 ) {
   const targetRatio = rect.width / rect.height;
   const sourceRatio = naturalWidth / naturalHeight;
+  const scale = Math.max(1, crop.scale || 1);
   let sx = 0;
   let sy = 0;
   let sw = naturalWidth;
   let sh = naturalHeight;
+
   if (sourceRatio > targetRatio) {
-    sw = naturalHeight * targetRatio;
-    sx = ((naturalWidth - sw) / 2) * (cropX + 1);
-    sx = clamp(sx, 0, naturalWidth - sw);
+    sw = (naturalHeight * targetRatio) / scale;
+    sh = naturalHeight / scale;
   } else {
-    sh = naturalWidth / targetRatio;
-    sy = ((naturalHeight - sh) / 2) * (cropY + 1);
-    sy = clamp(sy, 0, naturalHeight - sh);
+    sw = naturalWidth / scale;
+    sh = (naturalWidth / targetRatio) / scale;
   }
-  context.drawImage(image, sx, sy, sw, sh, rect.x, rect.y, rect.width, rect.height);
+
+  sx = clamp(((naturalWidth - sw) * (crop.x + 1)) / 2, 0, naturalWidth - sw);
+  sy = clamp(((naturalHeight - sh) * (crop.y + 1)) / 2, 0, naturalHeight - sh);
+
+  context.save();
+  clipToRect(context, rect);
+  context.drawImage(
+    image,
+    sx,
+    sy,
+    sw,
+    sh,
+    rect.x - 1,
+    rect.y - 1,
+    rect.width + 2,
+    rect.height + 2
+  );
+  context.restore();
 }
 
-function drawBaseRegion(
+function drawFillRegion(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   rect: Rect,
   style: BaseStyle,
@@ -373,16 +256,17 @@ function drawBaseRegion(
   stripeThickness: number
 ) {
   context.save();
+  clipToRect(context, rect);
   if (style === "solid") {
     context.fillStyle = primary;
-    context.fillRect(rect.x, rect.y, rect.width, rect.height);
+    context.fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
     context.restore();
     return;
   }
 
   if (style === "pixel") {
     context.fillStyle = secondary;
-    context.fillRect(rect.x, rect.y, rect.width, rect.height);
+    context.fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
     const block = Math.max(8, stripeThickness);
     for (let y = 0; y < rect.height; y += block) {
       for (let x = 0; x < rect.width; x += block) {
@@ -396,7 +280,7 @@ function drawBaseRegion(
   }
 
   context.fillStyle = secondary;
-  context.fillRect(rect.x, rect.y, rect.width, rect.height);
+  context.fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
   const stripeGap = style === "duotone" ? stripeThickness * 1.8 : stripeThickness * 2;
   for (let y = rect.y; y < rect.y + rect.height; y += stripeGap) {
     context.fillStyle = primary;
@@ -405,72 +289,191 @@ function drawBaseRegion(
   context.restore();
 }
 
-function drawSampleDots(
+function drawShapeDots(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   input: RenderInput,
+  regions: CanvasRegion[],
   sources: CanvasSource[],
+  sourceMap: Map<string, CanvasSource>,
   samplers: Map<string, Sampler>,
-  rect: Rect,
-  points: Point[],
-  rng: () => number,
-  accent: string
+  rng: () => number
 ) {
-  const { dots } = input.project;
-  points.forEach((point, index) => {
-    const size = dots.dotSize + (rng() - 0.5) * dots.sizeVariance;
-    const source = sources[index % sources.length] ?? sources[0];
-    const sampler = samplers.get(source.id);
-    const color = sampler ? sampleColor(sampler, point.x, point.y, rect) : accent;
-    const fill = dots.fillMode === "solid" ? accent : color;
-    context.save();
-    context.globalAlpha = dots.opacity;
-    const path = createShapePath(dots.shape, point.x, point.y, Math.max(8, size));
-    context.translate(point.x, point.y);
-    context.rotate((rng() - 0.5) * 0.45);
-    context.translate(-point.x, -point.y);
-    context.clip(path);
-    if (dots.fillMode === "image-cutout") {
-      drawCutout(context, source, point.x, point.y, Math.max(12, size * 1.6), rect);
-    } else {
-      context.fillStyle = fill;
-      context.fill(path);
-    }
-    context.restore();
+  const photoRegions = regions.filter((region) => region.kind === "photo");
+  const fillRegions =
+    input.project.fillBlockEnabled && input.project.fillBlockDotsEnabled
+      ? regions.filter((region) => region.kind === "fill")
+      : [];
+
+  const photoDotBudget =
+    fillRegions.length === 0
+      ? input.project.dots.dotCount
+      : Math.round(input.project.dots.dotCount * input.project.dots.primaryBlockShare);
+  const fillDotBudget = Math.max(0, input.project.dots.dotCount - photoDotBudget);
+
+  distributeDots(
+    context,
+    input,
+    photoRegions,
+    Math.max(photoDotBudget, photoRegions.length ? photoRegions.length : 0),
+    sources,
+    sourceMap,
+    samplers,
+    rng,
+    input.project.dots.photoBlockDistribution,
+    true
+  );
+  distributeDots(
+    context,
+    input,
+    fillRegions,
+    fillDotBudget,
+    sources,
+    sourceMap,
+    samplers,
+    rng,
+    input.project.dots.fillBlockDistribution,
+    false
+  );
+
+  const decorativePhotoBudget =
+    fillRegions.length === 0
+      ? input.project.dots.decorativeCount
+      : Math.round(input.project.dots.decorativeCount * 0.72);
+  const decorativeFillBudget =
+    fillRegions.length === 0 ? 0 : Math.max(0, input.project.dots.decorativeCount - decorativePhotoBudget);
+
+  drawDecorativeDots(context, input, photoRegions, decorativePhotoBudget, rng, true);
+  drawDecorativeDots(context, input, fillRegions, decorativeFillBudget, rng, false);
+}
+
+function distributeDots(
+  context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  input: RenderInput,
+  regions: CanvasRegion[],
+  totalCount: number,
+  sources: CanvasSource[],
+  sourceMap: Map<string, CanvasSource>,
+  samplers: Map<string, Sampler>,
+  rng: () => number,
+  distribution: Distribution,
+  avoidCenter: boolean
+) {
+  if (regions.length === 0 || totalCount <= 0) {
+    return;
+  }
+
+  const counts = splitCount(totalCount, regions.length);
+  regions.forEach((region, regionIndex) => {
+    const points = createDistribution(distribution, counts[regionIndex], region.rect, rng, {
+      minDistance:
+        region.kind === "fill"
+          ? Math.max(14, input.project.dots.dotSize * 0.78)
+          : Math.max(12, input.project.dots.dotSize * 0.68),
+      verticalBias: region.kind === "fill" ? "center" : "top",
+      avoidCenter: avoidCenter ? 0.12 : 0
+    });
+
+    points.forEach((point, pointIndex) => {
+      const size = Math.max(
+        12,
+        input.project.dots.dotSize + (rng() - 0.5) * input.project.dots.sizeVariance
+      );
+      const source = pickSourceForRegion(region, pointIndex, regionIndex, sources, sourceMap);
+      const sampler = source ? samplers.get(source.id) : undefined;
+      const color =
+        sampler && source
+          ? sampleColor(sampler, point.x, point.y, region.rect)
+          : input.theme.palette.accent;
+
+      context.save();
+      context.globalAlpha = input.project.dots.opacity;
+      clipToRect(context, region.rect);
+      const path = createShapePath(input.project.dots.shape, point.x, point.y, size);
+      context.translate(point.x, point.y);
+      context.rotate((rng() - 0.5) * 0.68);
+      context.translate(-point.x, -point.y);
+      context.clip(path);
+      if (input.project.dots.fillMode === "image-cutout" && source) {
+        drawCutout(context, source, point.x, point.y, Math.max(16, size * 1.6), region.rect);
+      } else {
+        context.fillStyle =
+          input.project.dots.fillMode === "solid" ? input.theme.palette.accent : color;
+        context.fill(path);
+      }
+      context.restore();
+    });
   });
 }
 
 function drawDecorativeDots(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   input: RenderInput,
-  topRect: Rect,
-  bottomRect: Rect,
+  regions: CanvasRegion[],
+  totalCount: number,
   rng: () => number,
-  palette: { primary: string; secondary: string; accent: string }
+  avoidCenter: boolean
 ) {
-  const { dots } = input.project;
-  const topDecorative = Math.ceil(dots.decorativeCount * 0.68);
-  const bottomDecorative = Math.max(0, dots.decorativeCount - topDecorative);
-  const topPoints = createDistribution("random", topDecorative, topRect, rng, {
-    minDistance: Math.max(8, dots.dotSize * 0.7),
-    overflowTop: topRect.height * 0.08,
-    verticalBias: "top"
+  if (regions.length === 0 || totalCount <= 0) {
+    return;
+  }
+
+  const colors = [
+    input.theme.palette.primary,
+    input.theme.palette.secondary,
+    input.theme.palette.accent
+  ];
+  const counts = splitCount(totalCount, regions.length);
+
+  regions.forEach((region, regionIndex) => {
+    const points = createDistribution("random", counts[regionIndex], region.rect, rng, {
+      minDistance:
+        region.kind === "fill"
+          ? Math.max(16, input.project.dots.dotSize * 0.84)
+          : Math.max(14, input.project.dots.dotSize * 0.74),
+      verticalBias: region.kind === "fill" ? "center" : "top",
+      avoidCenter: avoidCenter ? 0.16 : 0
+    });
+    points.forEach((point, pointIndex) => {
+      const size = input.project.dots.dotSize * lerp(0.86, 1.36, rng());
+      const path = createShapePath(input.project.dots.shape, point.x, point.y, size);
+      context.save();
+      clipToRect(context, region.rect);
+      context.globalAlpha = region.kind === "fill" ? 0.46 : 0.36;
+      context.fillStyle = colors[(regionIndex + pointIndex) % colors.length];
+      context.fill(path);
+      context.restore();
+    });
   });
-  const bottomPoints = input.project.layout.decorativeEverywhere
-    ? createDistribution("random", bottomDecorative, bottomRect, rng, {
-        minDistance: Math.max(8, dots.dotSize * 0.8),
-        verticalBias: "center"
-      })
-    : [];
-  const colors = [palette.primary, palette.secondary, palette.accent];
-  [...topPoints, ...bottomPoints].forEach((point, index) => {
-    const size = dots.dotSize * lerp(0.85, 1.35, rng());
-    const path = createShapePath(dots.shape, point.x, point.y, size);
-    context.save();
-    context.globalAlpha = 0.68;
-    context.fillStyle = colors[index % colors.length];
-    context.fill(path);
-    context.restore();
-  });
+}
+
+function splitCount(total: number, regionCount: number) {
+  const counts = new Array(regionCount).fill(0);
+  for (let index = 0; index < total; index += 1) {
+    counts[index % regionCount] += 1;
+  }
+  return counts;
+}
+
+function pickSourceForRegion(
+  region: CanvasRegion,
+  pointIndex: number,
+  regionIndex: number,
+  sources: CanvasSource[],
+  sourceMap: Map<string, CanvasSource>
+) {
+  if (region.kind === "photo" && region.photoId) {
+    return sourceMap.get(region.photoId) ?? sources[0];
+  }
+  return sources[(regionIndex + pointIndex) % sources.length] ?? sources[0];
+}
+
+function clipToRect(
+  context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  rect: Rect
+) {
+  context.beginPath();
+  context.rect(rect.x, rect.y, rect.width, rect.height);
+  context.clip();
 }
 
 function createDistribution(
@@ -480,25 +483,31 @@ function createDistribution(
   rng: () => number,
   options: DistributionOptions
 ) {
-  if (distribution === "grid") {
-    const columns = Math.max(2, Math.round(Math.sqrt(count)));
-    const rows = Math.max(2, Math.ceil(count / columns));
-    const points = [];
-    for (let row = 0; row < rows; row += 1) {
-      for (let column = 0; column < columns; column += 1) {
-        if (points.length >= count) {
-          break;
-        }
-        points.push({
-          x: rect.x + ((column + 0.5 + (rng() - 0.5) * 0.4) / columns) * rect.width,
-          y: rect.y + ((row + 0.5 + (rng() - 0.5) * 0.4) / rows) * rect.height
-        });
-      }
-    }
-    return points;
+  if (count <= 0) {
+    return [];
   }
-
+  if (distribution === "grid") {
+    return createLooseGrid(count, rect, rng);
+  }
   return createRandomScatter(distribution, count, rect, rng, options);
+}
+
+function createLooseGrid(count: number, rect: Rect, rng: () => number) {
+  const columns = Math.max(2, Math.round(Math.sqrt(count)));
+  const rows = Math.max(2, Math.ceil(count / columns));
+  const points = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      if (points.length >= count) {
+        break;
+      }
+      points.push({
+        x: rect.x + ((column + 0.5 + (rng() - 0.5) * 0.72) / columns) * rect.width,
+        y: rect.y + ((row + 0.5 + (rng() - 0.5) * 0.72) / rows) * rect.height
+      });
+    }
+  }
+  return points;
 }
 
 function createRandomScatter(
@@ -508,26 +517,32 @@ function createRandomScatter(
   rng: () => number,
   options: DistributionOptions
 ) {
-  const points: Point[] = [];
-  const attempts = Math.max(80, count * 120);
-  const overflowTop = options.overflowTop ?? 0;
-  const overflowBottom = options.overflowBottom ?? 0;
+  const points: Array<{ x: number; y: number }> = [];
   const minDistanceSq = options.minDistance * options.minDistance;
+  const attempts = Math.max(140, count * 180);
 
   for (let attempt = 0; attempt < attempts && points.length < count; attempt += 1) {
     const x = rect.x + rng() * rect.width;
     const yNorm =
       distribution === "bottom-heavy"
-        ? Math.pow(rng(), 0.58)
+        ? Math.pow(rng(), 0.56)
         : options.verticalBias === "top"
-          ? Math.pow(rng(), 1.45)
+          ? Math.pow(rng(), 1.28)
           : options.verticalBias === "bottom"
-            ? Math.pow(rng(), 0.65)
+            ? Math.pow(rng(), 0.72)
             : rng();
-    const y =
-      rect.y -
-      overflowTop +
-      yNorm * (rect.height + overflowTop + overflowBottom);
+    const y = rect.y + yNorm * rect.height;
+    const centerDistance = distanceSquared(
+      x,
+      y,
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2
+    );
+    const centerLimit = Math.min(rect.width, rect.height) * (options.avoidCenter ?? 0);
+
+    if (centerLimit > 0 && centerDistance < centerLimit * centerLimit && rng() < 0.72) {
+      continue;
+    }
 
     if (points.every((point) => distanceSquared(point.x, point.y, x, y) >= minDistanceSq)) {
       points.push({ x, y });
@@ -537,10 +552,7 @@ function createRandomScatter(
   while (points.length < count) {
     points.push({
       x: rect.x + rng() * rect.width,
-      y:
-        rect.y -
-        overflowTop +
-        rng() * (rect.height + overflowTop + overflowBottom)
+      y: rect.y + rng() * rect.height
     });
   }
 
@@ -554,10 +566,9 @@ function distanceSquared(ax: number, ay: number, bx: number, by: number) {
 }
 
 function sampleColor(sampler: Sampler, x: number, y: number, rect: Rect) {
-  const ctx = sampler.context;
   const sx = clamp(Math.floor(((x - rect.x) / rect.width) * 63), 0, 63);
   const sy = clamp(Math.floor(((y - rect.y) / rect.height) * 63), 0, 63);
-  const imageData = ctx.getImageData(sx, sy, 1, 1).data;
+  const imageData = sampler.context.getImageData(sx, sy, 1, 1).data;
   return `rgba(${imageData[0]}, ${imageData[1]}, ${imageData[2]}, 1)`;
 }
 
