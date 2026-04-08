@@ -1,11 +1,11 @@
 import type {
   BaseStyle,
   Distribution,
-  PhotoCrop,
   RenderInput,
   SourceAsset
 } from "../types";
 import { resolveCanvasRegions, type CanvasRegion, type Rect } from "./blockLayout";
+import { getCropGeometry } from "./crop";
 import { clamp, lerp, mulberry32 } from "./random";
 import { createShapePath } from "./shapes";
 
@@ -210,26 +210,15 @@ function drawCroppedImage(
   naturalWidth: number,
   naturalHeight: number,
   rect: Rect,
-  crop: PhotoCrop
+  crop: { x: number; y: number; scale: number }
 ) {
-  const targetRatio = rect.width / rect.height;
-  const sourceRatio = naturalWidth / naturalHeight;
-  const scale = Math.max(1, crop.scale || 1);
-  let sx = 0;
-  let sy = 0;
-  let sw = naturalWidth;
-  let sh = naturalHeight;
-
-  if (sourceRatio > targetRatio) {
-    sw = (naturalHeight * targetRatio) / scale;
-    sh = naturalHeight / scale;
-  } else {
-    sw = naturalWidth / scale;
-    sh = (naturalWidth / targetRatio) / scale;
-  }
-
-  sx = clamp(((naturalWidth - sw) * (crop.x + 1)) / 2, 0, naturalWidth - sw);
-  sy = clamp(((naturalHeight - sh) * (crop.y + 1)) / 2, 0, naturalHeight - sh);
+  const { sx, sy, sw, sh } = getCropGeometry(
+    crop,
+    naturalWidth,
+    naturalHeight,
+    rect.width,
+    rect.height
+  );
 
   context.save();
   clipToRect(context, rect);

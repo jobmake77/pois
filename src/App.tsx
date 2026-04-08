@@ -9,10 +9,10 @@ import {
   getThemeById,
   themePresets
 } from "./presets";
+import { resolveCanvasRegions, getSuggestedEditorState } from "./render/blockLayout";
+import { clampPhotoCrop, createDefaultPhotoCrop } from "./render/crop";
 import { renderToBlobOnMain, renderToCanvas } from "./render/engine";
-import { getSuggestedEditorState } from "./render/blockLayout";
 import { canUseWorkerExport, exportWithWorker } from "./render/workerClient";
-import { clamp } from "./render/random";
 import type {
   CanvasPreset,
   ExportPreview,
@@ -275,7 +275,16 @@ export default function App() {
       acceptedAssets.forEach((asset) => {
         nextPhotoCrops[asset.id] = { x: 0, y: 0, scale: 1 };
       });
-      return syncProjectWithSources(current, nextPhotoIds, nextPhotoCrops, nextPhotoIds[0]);
+      const nextProject = syncProjectWithSources(current, nextPhotoIds, nextPhotoCrops, nextPhotoIds[0]);
+      return {
+        ...nextProject,
+        photoCrops: normalizePhotoCrops(
+          nextProject,
+          nextSources,
+          nextPhotoCrops,
+          new Set(acceptedAssets.map((asset) => asset.id))
+        )
+      };
     });
     setActivePanel("layout");
     setScreen("editor");
@@ -359,17 +368,31 @@ export default function App() {
   };
 
   const updatePhotoCrop = (photoId: string, nextCrop: PhotoCrop) => {
-    setProject((current) => ({
-      ...current,
-      photoCrops: {
-        ...current.photoCrops,
-        [photoId]: {
-          x: clamp(Number(nextCrop.x.toFixed(3)), -1, 1),
-          y: clamp(Number(nextCrop.y.toFixed(3)), -1, 1),
-          scale: clamp(Number(nextCrop.scale.toFixed(3)), 1, 2.6)
-        }
+    setProject((current) => {
+      const source = sourcesRef.current.find((item) => item.id === photoId);
+      if (!source) {
+        return current;
       }
-    }));
+      const region = resolveCanvasRegions(current, current.canvasWidth, current.canvasHeight).find(
+        (item) => item.kind === "photo" && item.photoId === photoId
+      );
+      if (!region) {
+        return current;
+      }
+      return {
+        ...current,
+        photoCrops: {
+          ...current.photoCrops,
+          [photoId]: clampPhotoCrop(
+            nextCrop,
+            source.width,
+            source.height,
+            region.rect.width,
+            region.rect.height
+          )
+        }
+      };
+    });
   };
 
   const handleDownload = () => {
@@ -460,7 +483,16 @@ export default function App() {
               const nextPhotoIds = current.photoIds.filter((id) => id !== sourceId);
               const nextPhotoCrops = { ...current.photoCrops };
               delete nextPhotoCrops[sourceId];
-              return syncProjectWithSources(current, nextPhotoIds, nextPhotoCrops, current.activePhotoId);
+              const nextProject = syncProjectWithSources(
+                current,
+                nextPhotoIds,
+                nextPhotoCrops,
+                current.activePhotoId
+              );
+              return {
+                ...nextProject,
+                photoCrops: normalizePhotoCrops(nextProject, nextSources, nextPhotoCrops)
+              };
             });
             if (nextSources.length === 0) {
               setScreen("home");
@@ -478,31 +510,53 @@ export default function App() {
               const canvas = patch.canvasPreset
                 ? getCanvasDimensions(patch.canvasPreset)
                 : { width: current.canvasWidth, height: current.canvasHeight };
-              return {
+              const nextProject = {
                 ...current,
                 layout: nextLayout,
                 canvasWidth: canvas.width,
                 canvasHeight: canvas.height
               };
+              return {
+                ...nextProject,
+                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
+              };
             })
           }
           onSetLayoutMode={(layoutMode) =>
-            setProject((current) => ({
-              ...current,
-              layoutMode
-            }))
+            setProject((current) => {
+              const nextProject = {
+                ...current,
+                layoutMode
+              };
+              return {
+                ...nextProject,
+                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
+              };
+            })
           }
           onSetLayoutDirection={(layoutDirection) =>
-            setProject((current) => ({
-              ...current,
-              layoutDirection
-            }))
+            setProject((current) => {
+              const nextProject = {
+                ...current,
+                layoutDirection
+              };
+              return {
+                ...nextProject,
+                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
+              };
+            })
           }
           onSetFillBlockEnabled={(fillBlockEnabled) =>
-            setProject((current) => ({
-              ...current,
-              fillBlockEnabled
-            }))
+            setProject((current) => {
+              const nextProject = {
+                ...current,
+                fillBlockEnabled
+              };
+              return {
+                ...nextProject,
+                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
+              };
+            })
           }
           onSetFillBlockDotsEnabled={(fillBlockDotsEnabled) =>
             setProject((current) => ({
@@ -632,6 +686,49 @@ function getCanvasDimensions(preset: CanvasPreset) {
     return { width: 1600, height: 1000 };
   }
   return { width: 1000, height: 1280 };
+}
+
+function normalizePhotoCrops(
+  project: ProjectState,
+  sources: SourceAsset[],
+  cropMap: Record<string, PhotoCrop>,
+  initializeIds = new Set<string>()
+) {
+  const sourceMap = new Map(sources.map((source) => [source.id, source]));
+  const regionMap = new Map(
+    resolveCanvasRegions(project, project.canvasWidth, project.canvasHeight)
+      .filter((region) => region.kind === "photo" && region.photoId)
+      .map((region) => [region.photoId!, region])
+  );
+
+  const nextPhotoCrops: Record<string, PhotoCrop> = {};
+  project.photoIds.forEach((photoId) => {
+    const source = sourceMap.get(photoId);
+    const region = regionMap.get(photoId);
+    if (!source || !region) {
+      return;
+    }
+
+    if (initializeIds.has(photoId) || !cropMap[photoId]) {
+      nextPhotoCrops[photoId] = createDefaultPhotoCrop(
+        source.width,
+        source.height,
+        region.rect.width,
+        region.rect.height
+      );
+      return;
+    }
+
+    nextPhotoCrops[photoId] = clampPhotoCrop(
+      cropMap[photoId],
+      source.width,
+      source.height,
+      region.rect.width,
+      region.rect.height
+    );
+  });
+
+  return nextPhotoCrops;
 }
 
 function readDraft(): SavedDraft | undefined {

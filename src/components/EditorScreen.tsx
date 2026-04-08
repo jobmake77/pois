@@ -5,6 +5,11 @@ import type {
   WheelEvent as ReactWheelEvent
 } from "react";
 import { resolveCanvasRegions } from "../render/blockLayout";
+import {
+  clampPhotoCrop,
+  scalePhotoCropFromAnchor,
+  translatePhotoCrop
+} from "../render/crop";
 import { clamp } from "../render/random";
 import type {
   BaseStyle,
@@ -65,6 +70,8 @@ interface GestureState {
         distance: number;
         centerX: number;
         centerY: number;
+        anchorX: number;
+        anchorY: number;
         crop: PhotoCrop;
       }
     | null;
@@ -149,13 +156,20 @@ export function EditorScreen({
 
   const startGesture = (
     event: ReactPointerEvent<HTMLButtonElement>,
-    photoId: string
+    regionModel: (typeof photoRegions)[number]
   ) => {
+    const photoId = regionModel.photoId;
     if (project.activePhotoId !== photoId) {
       onSelectSource(photoId);
     }
 
-    const crop = project.photoCrops[photoId] ?? { x: 0, y: 0, scale: 1 };
+    const crop = clampPhotoCrop(
+      project.photoCrops[photoId] ?? { x: 0, y: 0, scale: 1 },
+      regionModel.source.width,
+      regionModel.source.height,
+      regionModel.region.rect.width,
+      regionModel.region.rect.height
+    );
     const state = gestureRef.current;
     if (state.photoId !== photoId) {
       state.pointers = new Map();
@@ -171,12 +185,15 @@ export function EditorScreen({
 
     if (state.pointers.size === 2) {
       const points = Array.from(state.pointers.values());
+      const bounds = event.currentTarget.getBoundingClientRect();
       state.dragOrigin = null;
       state.dragCrop = null;
       state.pinchOrigin = {
         distance: getDistance(points[0], points[1]),
         centerX: (points[0].x + points[1].x) / 2,
         centerY: (points[0].y + points[1].y) / 2,
+        anchorX: clamp((((points[0].x + points[1].x) / 2) - bounds.left) / bounds.width, 0, 1),
+        anchorY: clamp((((points[0].y + points[1].y) / 2) - bounds.top) / bounds.height, 0, 1),
         crop
       };
     }
@@ -186,15 +203,22 @@ export function EditorScreen({
 
   const moveGesture = (
     event: ReactPointerEvent<HTMLButtonElement>,
-    photoId: string
+    regionModel: (typeof photoRegions)[number]
   ) => {
+    const photoId = regionModel.photoId;
     const state = gestureRef.current;
     if (state.photoId !== photoId || !state.pointers.has(event.pointerId)) {
       return;
     }
 
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    const crop = project.photoCrops[photoId] ?? { x: 0, y: 0, scale: 1 };
+    const currentCrop = clampPhotoCrop(
+      project.photoCrops[photoId] ?? { x: 0, y: 0, scale: 1 },
+      regionModel.source.width,
+      regionModel.source.height,
+      regionModel.region.rect.width,
+      regionModel.region.rect.height
+    );
     const width = event.currentTarget.clientWidth || 1;
     const height = event.currentTarget.clientHeight || 1;
 
@@ -204,32 +228,61 @@ export function EditorScreen({
       const nextCenterX = (points[0].x + points[1].x) / 2;
       const nextCenterY = (points[0].y + points[1].y) / 2;
       const nextScale = clamp(
-        state.pinchOrigin.crop.scale * (nextDistance / Math.max(1, state.pinchOrigin.distance)),
+        state.pinchOrigin.crop.scale *
+          Math.pow(nextDistance / Math.max(1, state.pinchOrigin.distance), 0.92),
         1,
         2.6
       );
+      const scaledCrop = scalePhotoCropFromAnchor(
+        state.pinchOrigin.crop,
+        nextScale,
+        state.pinchOrigin.anchorX,
+        state.pinchOrigin.anchorY,
+        regionModel.source.width,
+        regionModel.source.height,
+        regionModel.region.rect.width,
+        regionModel.region.rect.height
+      );
       const dx = nextCenterX - state.pinchOrigin.centerX;
       const dy = nextCenterY - state.pinchOrigin.centerY;
-      onSetPhotoCrop(photoId, {
-        x: state.pinchOrigin.crop.x - (dx / width) * (2 / nextScale),
-        y: state.pinchOrigin.crop.y - (dy / height) * (2 / nextScale),
-        scale: nextScale
-      });
+      onSetPhotoCrop(
+        photoId,
+        translatePhotoCrop(
+          scaledCrop,
+          dx,
+          dy,
+          regionModel.source.width,
+          regionModel.source.height,
+          regionModel.region.rect.width,
+          regionModel.region.rect.height
+        )
+      );
       return;
     }
 
     if (state.pointers.size === 1 && state.dragOrigin && state.dragCrop) {
       const dx = event.clientX - state.dragOrigin.x;
       const dy = event.clientY - state.dragOrigin.y;
-      onSetPhotoCrop(photoId, {
-        x: state.dragCrop.x - (dx / width) * (2 / crop.scale),
-        y: state.dragCrop.y - (dy / height) * (2 / crop.scale),
-        scale: crop.scale
-      });
+      onSetPhotoCrop(
+        photoId,
+        translatePhotoCrop(
+          state.dragCrop,
+          dx,
+          dy,
+          regionModel.source.width,
+          regionModel.source.height,
+          regionModel.region.rect.width,
+          regionModel.region.rect.height
+        )
+      );
     }
   };
 
-  const endGesture = (event: ReactPointerEvent<HTMLButtonElement>, photoId: string) => {
+  const endGesture = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    regionModel: (typeof photoRegions)[number]
+  ) => {
+    const photoId = regionModel.photoId;
     const state = gestureRef.current;
     if (state.photoId !== photoId) {
       return;
@@ -242,7 +295,13 @@ export function EditorScreen({
       // ignore capture release failures
     }
 
-    const crop = project.photoCrops[photoId] ?? { x: 0, y: 0, scale: 1 };
+    const crop = clampPhotoCrop(
+      project.photoCrops[photoId] ?? { x: 0, y: 0, scale: 1 },
+      regionModel.source.width,
+      regionModel.source.height,
+      regionModel.region.rect.width,
+      regionModel.region.rect.height
+    );
     if (state.pointers.size === 1) {
       const remaining = Array.from(state.pointers.values())[0];
       state.dragOrigin = remaining;
@@ -261,23 +320,36 @@ export function EditorScreen({
 
   const handleWheel = (
     event: ReactWheelEvent<HTMLButtonElement>,
-    photoId: string
+    regionModel: (typeof photoRegions)[number]
   ) => {
+    const photoId = regionModel.photoId;
     event.preventDefault();
     if (project.activePhotoId !== photoId) {
       onSelectSource(photoId);
     }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const anchorX = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
+    const anchorY = clamp((event.clientY - bounds.top) / bounds.height, 0, 1);
     const crop = project.photoCrops[photoId] ?? { x: 0, y: 0, scale: 1 };
-    const delta = event.deltaY < 0 ? 0.08 : -0.08;
-    onSetPhotoCrop(photoId, {
-      ...crop,
-      scale: clamp(crop.scale + delta, 1, 2.6)
-    });
+    const delta = event.deltaY < 0 ? 0.06 : -0.06;
+    onSetPhotoCrop(
+      photoId,
+      scalePhotoCropFromAnchor(
+        crop,
+        clamp(crop.scale + delta, 1, 2.6),
+        anchorX,
+        anchorY,
+        regionModel.source.width,
+        regionModel.source.height,
+        regionModel.region.rect.width,
+        regionModel.region.rect.height
+      )
+    );
   };
 
   return (
     <main className="screen editor-screen">
-      <header className="editor-header">
+      <header className="editor-header editor-toolbar editor-topbar">
         <div className="editor-header-left">
           <button className="icon-chip" onClick={onBack}>
             返回
@@ -290,32 +362,36 @@ export function EditorScreen({
         </div>
 
         <div className="editor-header-actions">
-          <button className="secondary-button compact" onClick={onRandomize}>
-            随机一下
-          </button>
-          <button className="secondary-button compact" onClick={onResetTheme}>
-            重置风格
-          </button>
-          <label className="inline-select">
-            <span>导出</span>
-            <select
-              value={project.exportFormat}
-              onChange={(event) => onUpdateExportFormat(event.target.value as ExportFormat)}
-            >
-              <option value="png">PNG</option>
-              <option value="jpeg">JPEG</option>
-            </select>
-          </label>
-          <button className="primary-button compact" onClick={onExport} disabled={exportPending}>
-            {exportPending ? "导出中..." : "生成高清"}
-          </button>
+          <div className="toolbar-group">
+            <button className="secondary-button compact" onClick={onRandomize}>
+              随机一下
+            </button>
+            <button className="secondary-button compact" onClick={onResetTheme}>
+              重置风格
+            </button>
+          </div>
+          <div className="toolbar-group">
+            <label className="inline-select">
+              <span>导出</span>
+              <select
+                value={project.exportFormat}
+                onChange={(event) => onUpdateExportFormat(event.target.value as ExportFormat)}
+              >
+                <option value="png">PNG</option>
+                <option value="jpeg">JPEG</option>
+              </select>
+            </label>
+            <button className="primary-button compact" onClick={onExport} disabled={exportPending}>
+              {exportPending ? "导出中..." : "生成高清"}
+            </button>
+          </div>
         </div>
       </header>
 
-      <section className="image-strip-card">
+      <section className="image-strip-card editor-imagebar">
         <div className="section-head">
           <h2>图片栏</h2>
-          <p>当前最多 2 张，删除直接点右上角。</p>
+          <p>{`当前最多 2 张，删除直接点右上角。已加载 ${sources.length}/2`}</p>
         </div>
         <div className="image-chip-row">
           {sources.map((source, index) => (
@@ -349,12 +425,28 @@ export function EditorScreen({
 
       <section className="editor-main">
         <div className="canvas-column">
+          <div className="canvas-header-card">
+            <div>
+              <p className="eyebrow">Live Canvas</p>
+              <h2>实时画板</h2>
+            </div>
+            <div className="canvas-header-actions">
+              <span className="status-pill">{previewStatus}</span>
+              <span className="status-pill subtle">
+                {renderTime ? `${renderTime.toFixed(0)}ms` : "等待首帧"}
+              </span>
+            </div>
+          </div>
           <div className="canvas-meta">
-            <span>{previewStatus}</span>
-            <span>{renderTime ? `${renderTime.toFixed(0)}ms` : "等待首帧"}</span>
+            <span>{sources.length === 1 ? "当前正在编辑单张照片" : "当前正在编辑双图画板"}</span>
+            <span>{project.fillBlockEnabled ? "填充块已开启" : "填充块已关闭"}</span>
+          </div>
+          <div className="canvas-helper-row">
+            <span>桌面端可滚轮缩放、拖动平移</span>
+            <span>手机端可双指缩放、单指拖动</span>
           </div>
 
-          <div className="preview-frame">
+          <div className="preview-frame canvas-stage-card">
             <div
               className="preview-shell"
               style={{ aspectRatio: `${project.canvasWidth} / ${project.canvasHeight}` }}
@@ -370,11 +462,11 @@ export function EditorScreen({
                   }`}
                   style={region.style}
                   onClick={() => onSelectSource(region.photoId)}
-                  onPointerDown={(event) => startGesture(event, region.photoId)}
-                  onPointerMove={(event) => moveGesture(event, region.photoId)}
-                  onPointerUp={(event) => endGesture(event, region.photoId)}
-                  onPointerCancel={(event) => endGesture(event, region.photoId)}
-                  onWheel={(event) => handleWheel(event, region.photoId)}
+                  onPointerDown={(event) => startGesture(event, region)}
+                  onPointerMove={(event) => moveGesture(event, region)}
+                  onPointerUp={(event) => endGesture(event, region)}
+                  onPointerCancel={(event) => endGesture(event, region)}
+                  onWheel={(event) => handleWheel(event, region)}
                   aria-label={`编辑 ${region.source.name}`}
                 />
               ))}
@@ -384,10 +476,19 @@ export function EditorScreen({
                   <button
                     type="button"
                     onClick={() =>
-                      onSetPhotoCrop(project.activePhotoId, {
-                        ...activeCrop,
-                        scale: clamp(activeCrop.scale - 0.08, 1, 2.6)
-                      })
+                      onSetPhotoCrop(
+                        project.activePhotoId,
+                        scalePhotoCropFromAnchor(
+                          activeCrop,
+                          clamp(activeCrop.scale - 0.06, 1, 2.6),
+                          0.5,
+                          0.5,
+                          activeRegion.source.width,
+                          activeRegion.source.height,
+                          activeRegion.region.rect.width,
+                          activeRegion.region.rect.height
+                        )
+                      )
                     }
                     aria-label="缩小"
                   >
@@ -397,10 +498,19 @@ export function EditorScreen({
                   <button
                     type="button"
                     onClick={() =>
-                      onSetPhotoCrop(project.activePhotoId, {
-                        ...activeCrop,
-                        scale: clamp(activeCrop.scale + 0.08, 1, 2.6)
-                      })
+                      onSetPhotoCrop(
+                        project.activePhotoId,
+                        scalePhotoCropFromAnchor(
+                          activeCrop,
+                          clamp(activeCrop.scale + 0.06, 1, 2.6),
+                          0.5,
+                          0.5,
+                          activeRegion.source.width,
+                          activeRegion.source.height,
+                          activeRegion.region.rect.width,
+                          activeRegion.region.rect.height
+                        )
+                      )
                     }
                     aria-label="放大"
                   >
@@ -413,6 +523,16 @@ export function EditorScreen({
         </div>
 
         <aside className="editor-sidebar">
+          <div className="sidebar-header">
+            <div>
+              <p className="eyebrow">Controls</p>
+              <h2>编辑参数</h2>
+            </div>
+            <p className="sidebar-header-note">
+              {project.activePhotoId ? "当前以画板中的激活图片为编辑对象。" : "等待选择图片。"}
+            </p>
+          </div>
+
           <div className="mobile-panel-switch">
             {(["layout", "fill", "dots"] as PanelKey[]).map((panel) => (
               <button
@@ -425,7 +545,7 @@ export function EditorScreen({
             ))}
           </div>
 
-          <div className={`panel-card ${activePanel === "layout" ? "active-mobile-panel" : ""}`}>
+          <div className={`panel-card sidebar-panel ${activePanel === "layout" ? "active-mobile-panel" : ""}`}>
             <LayoutPanel
               photoCount={sources.length}
               layoutMode={project.layoutMode}
@@ -439,7 +559,7 @@ export function EditorScreen({
             />
           </div>
 
-          <div className={`panel-card ${activePanel === "fill" ? "active-mobile-panel" : ""}`}>
+          <div className={`panel-card sidebar-panel ${activePanel === "fill" ? "active-mobile-panel" : ""}`}>
             <FillPanel
               photoCount={sources.length}
               theme={theme}
@@ -454,7 +574,7 @@ export function EditorScreen({
             />
           </div>
 
-          <div className={`panel-card ${activePanel === "dots" ? "active-mobile-panel" : ""}`}>
+          <div className={`panel-card sidebar-panel ${activePanel === "dots" ? "active-mobile-panel" : ""}`}>
             <DotsPanel
               value={project.dots}
               fillBlockEnabled={project.fillBlockEnabled}
@@ -576,7 +696,8 @@ function LayoutPanel({
 
   return (
     <div className="panel-grid">
-      <div className="section-head">
+      <div className="panel-section-head">
+        <span className="panel-kicker">Layout</span>
         <h2>布局</h2>
         <p>先把单图和双图做准，方向和填充块都在这里切换。</p>
       </div>
@@ -699,7 +820,8 @@ function FillPanel({
 
   return (
     <div className="panel-grid">
-      <div className="section-head">
+      <div className="panel-section-head">
+        <span className="panel-kicker">Fill Block</span>
         <h2>填充块</h2>
         <p>{photoCount <= 1 ? "单图默认开启。" : "双图时可以手动打开填充块。"}</p>
       </div>
@@ -787,7 +909,8 @@ function DotsPanel({
 
   return (
     <div className="panel-grid">
-      <div className="section-head">
+      <div className="panel-section-head">
+        <span className="panel-kicker">Dots</span>
         <h2>波点</h2>
         <p>默认已经调得更大、更密，进来就能直接看到效果。</p>
       </div>
