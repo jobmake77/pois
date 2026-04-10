@@ -1,9 +1,20 @@
 import { useMemo, useRef } from "react";
 import type {
+  CSSProperties,
   PointerEvent as ReactPointerEvent,
   RefObject,
   WheelEvent as ReactWheelEvent
 } from "react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  Download,
+  Plus,
+  RotateCcw,
+  Shuffle,
+  Upload,
+  X
+} from "lucide-react";
 import { resolveCanvasRegions } from "../render/blockLayout";
 import {
   clampPhotoCrop,
@@ -153,6 +164,10 @@ export function EditorScreen({
     ? project.photoCrops[project.activePhotoId] ?? { x: 0, y: 0, scale: 1 }
     : null;
   const activeRegion = photoRegions.find((item) => item.photoId === project.activePhotoId);
+  const previewShellStyle = {
+    aspectRatio: `${project.canvasWidth} / ${project.canvasHeight}`,
+    "--poster-ratio": String(project.canvasWidth / project.canvasHeight)
+  } as CSSProperties;
 
   const startGesture = (
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -230,7 +245,7 @@ export function EditorScreen({
       const nextScale = clamp(
         state.pinchOrigin.crop.scale *
           Math.pow(nextDistance / Math.max(1, state.pinchOrigin.distance), 0.92),
-        1,
+        0.2,
         2.6
       );
       const scaledCrop = scalePhotoCropFromAnchor(
@@ -336,7 +351,7 @@ export function EditorScreen({
       photoId,
       scalePhotoCropFromAnchor(
         crop,
-        clamp(crop.scale + delta, 1, 2.6),
+        clamp(crop.scale + delta, 0.2, 2.6),
         anchorX,
         anchorY,
         regionModel.source.width,
@@ -348,74 +363,85 @@ export function EditorScreen({
   };
 
   return (
-    <main className="screen editor-screen">
-      <header className="editor-header editor-toolbar editor-topbar">
+    <main className="screen editor-screen editor-reference-screen">
+      <header className="editor-header editor-reference-toolbar">
         <div className="editor-header-left">
-          <button className="icon-chip" onClick={onBack}>
-            返回
+          <button className="icon-chip reference-back-chip" onClick={onBack}>
+            <ArrowLeft size={14} />
+            <span>返回</span>
           </button>
-          <div>
-            <p className="eyebrow">Pois Art Editor</p>
+          <div className="reference-title-group">
+            <p className="eyebrow">POIS EDITOR</p>
             <h1>图片编辑框</h1>
-            <p className="editor-subcopy">只保留真实画板、真实裁切和可选填充块。</p>
           </div>
         </div>
+        <p className="reference-toolbar-copy">只保留真实画板、真实裁切和可选填充块。</p>
 
         <div className="editor-header-actions">
           <div className="toolbar-group">
-            <button className="secondary-button compact" onClick={onRandomize}>
-              随机一下
+            <button className="secondary-button compact reference-action" onClick={onRandomize}>
+              <Shuffle size={14} />
+              <span>随机一下</span>
             </button>
-            <button className="secondary-button compact" onClick={onResetTheme}>
-              重置风格
+            <button className="secondary-button compact reference-action" onClick={onResetTheme}>
+              <RotateCcw size={14} />
+              <span>重置风格</span>
             </button>
           </div>
           <div className="toolbar-group">
-            <label className="inline-select">
-              <span>导出</span>
+            <label className="inline-select reference-export-select">
+              <span>导出 PNG</span>
               <select
                 value={project.exportFormat}
                 onChange={(event) => onUpdateExportFormat(event.target.value as ExportFormat)}
+                aria-label="导出格式"
               >
                 <option value="png">PNG</option>
                 <option value="jpeg">JPEG</option>
               </select>
+              <ChevronDown size={14} />
             </label>
-            <button className="primary-button compact" onClick={onExport} disabled={exportPending}>
-              {exportPending ? "导出中..." : "生成高清"}
+            <button
+              className="primary-button compact reference-primary-action"
+              onClick={onExport}
+              disabled={exportPending}
+            >
+              <Download size={14} />
+              <span>{exportPending ? "导出中..." : "导出海报"}</span>
             </button>
           </div>
         </div>
       </header>
 
-      <section className="image-strip-card editor-imagebar">
-        <div className="section-head">
+      <section className="image-strip-card editor-reference-strip">
+        <div className="section-head reference-strip-head">
           <h2>图片栏</h2>
           <p>{`当前最多 2 张，删除直接点右上角。已加载 ${sources.length}/2`}</p>
         </div>
-        <div className="image-chip-row">
+        <div className="image-chip-row reference-image-row">
           {sources.map((source, index) => (
             <div
               key={source.id}
-              className={`image-chip ${source.id === project.activePhotoId ? "active" : ""}`}
+              className={`image-chip reference-image-chip ${source.id === project.activePhotoId ? "active" : ""}`}
             >
               <button className="image-chip-select" onClick={() => onSelectSource(source.id)}>
                 <img src={source.objectUrl} alt={source.name} />
                 <span>{`图片 ${index + 1}`}</span>
-                <span className="image-chip-meta">{source.name}</span>
               </button>
               <button
                 className="image-chip-close"
                 onClick={() => onDeleteSource(source.id)}
                 aria-label={`删除图片 ${index + 1}`}
               >
-                ×
+                <X size={12} />
               </button>
             </div>
           ))}
           {sources.length < 2 ? (
-            <button className="image-chip add-chip" onClick={onOpenMoreFiles}>
-              <span className="add-chip-plus">+</span>
+            <button className="image-chip add-chip reference-add-chip" onClick={onOpenMoreFiles}>
+              <span className="add-chip-plus">
+                <Plus size={22} />
+              </span>
               <span>添加图片</span>
               <span className="image-chip-meta">{`${sources.length}/2`}</span>
             </button>
@@ -423,132 +449,142 @@ export function EditorScreen({
         </div>
       </section>
 
-      <section className="editor-main">
-        <div className="canvas-column">
-          <div className="canvas-header-card">
-            <div>
-              <p className="eyebrow">Live Canvas</p>
-              <h2>实时画板</h2>
-            </div>
-            <div className="canvas-header-actions">
-              <span className="status-pill">{previewStatus}</span>
-              <span className="status-pill subtle">
-                {renderTime ? `${renderTime.toFixed(0)}ms` : "等待首帧"}
-              </span>
-            </div>
-          </div>
-          <div className="canvas-meta">
-            <span>{sources.length === 1 ? "当前正在编辑单张照片" : "当前正在编辑双图画板"}</span>
-            <span>{project.fillBlockEnabled ? "填充块已开启" : "填充块已关闭"}</span>
-          </div>
-          <div className="canvas-helper-row">
-            <span>桌面端可滚轮缩放、拖动平移</span>
-            <span>手机端可双指缩放、单指拖动</span>
+      <section className="editor-main editor-reference-main">
+        <div className="canvas-column reference-canvas-pane">
+          <div className="reference-preview-status-row">
+            <span className="reference-preview-status">{previewStatus}</span>
+            <span className="reference-preview-time">
+              {renderTime ? `${renderTime.toFixed(0)}ms` : "等待首帧"}
+            </span>
           </div>
 
-          <div className="preview-frame canvas-stage-card">
-            <div
-              className="preview-shell"
-              style={{ aspectRatio: `${project.canvasWidth} / ${project.canvasHeight}` }}
-            >
-              <canvas ref={previewRef} className="preview-canvas" />
-
-              {photoRegions.map((region) => (
+          <div className="reference-stage-area">
+            <div className="reference-stage-center">
+              {sources.length === 0 ? (
                 <button
-                  key={region.photoId}
                   type="button"
-                  className={`preview-hit-region ${
-                    region.photoId === project.activePhotoId ? "active" : ""
-                  }`}
-                  style={region.style}
-                  onClick={() => onSelectSource(region.photoId)}
-                  onPointerDown={(event) => startGesture(event, region)}
-                  onPointerMove={(event) => moveGesture(event, region)}
-                  onPointerUp={(event) => endGesture(event, region)}
-                  onPointerCancel={(event) => endGesture(event, region)}
-                  onWheel={(event) => handleWheel(event, region)}
-                  aria-label={`编辑 ${region.source.name}`}
-                />
-              ))}
+                  className="reference-empty-poster"
+                  onClick={onOpenMoreFiles}
+                >
+                  <div className="reference-empty-photo">
+                    <Upload size={44} />
+                    <span>上传图片开始编辑</span>
+                  </div>
+                  <div className="reference-empty-fill">
+                    {Array.from({ length: 16 }).map((_, index) => (
+                      <span
+                        key={index}
+                        className="reference-empty-dot"
+                        style={{
+                          left: `${10 + ((index * 13) % 60)}%`,
+                          top: `${5 + ((index * 17) % 88)}%`,
+                          width: `${10 + (index % 4) * 4}px`,
+                          height: `${10 + (index % 4) * 4}px`
+                        }}
+                      />
+                    ))}
+                  </div>
+                </button>
+              ) : (
+                <div className="preview-frame reference-preview-card">
+                  <div className="preview-shell reference-preview-shell" style={previewShellStyle}>
+                    <canvas ref={previewRef} className="preview-canvas" />
 
-              {activeRegion && activeCrop ? (
-                <div className="zoom-chip" style={getZoomChipStyle(activeRegion.style)}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onSetPhotoCrop(
-                        project.activePhotoId,
-                        scalePhotoCropFromAnchor(
-                          activeCrop,
-                          clamp(activeCrop.scale - 0.06, 1, 2.6),
-                          0.5,
-                          0.5,
-                          activeRegion.source.width,
-                          activeRegion.source.height,
-                          activeRegion.region.rect.width,
-                          activeRegion.region.rect.height
-                        )
-                      )
-                    }
-                    aria-label="缩小"
-                  >
-                    -
-                  </button>
-                  <span>{`${Math.round(activeCrop.scale * 100)}%`}</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onSetPhotoCrop(
-                        project.activePhotoId,
-                        scalePhotoCropFromAnchor(
-                          activeCrop,
-                          clamp(activeCrop.scale + 0.06, 1, 2.6),
-                          0.5,
-                          0.5,
-                          activeRegion.source.width,
-                          activeRegion.source.height,
-                          activeRegion.region.rect.width,
-                          activeRegion.region.rect.height
-                        )
-                      )
-                    }
-                    aria-label="放大"
-                  >
-                    +
-                  </button>
+                    {photoRegions.map((region) => (
+                      <button
+                        key={region.photoId}
+                        type="button"
+                        className={`preview-hit-region ${
+                          region.photoId === project.activePhotoId ? "active" : ""
+                        }`}
+                        style={region.style}
+                        onClick={() => onSelectSource(region.photoId)}
+                        onPointerDown={(event) => startGesture(event, region)}
+                        onPointerMove={(event) => moveGesture(event, region)}
+                        onPointerUp={(event) => endGesture(event, region)}
+                        onPointerCancel={(event) => endGesture(event, region)}
+                        onWheel={(event) => handleWheel(event, region)}
+                        aria-label={`编辑 ${region.source.name}`}
+                      />
+                    ))}
+
+                    {activeRegion && activeCrop ? (
+                      <div className="zoom-chip" style={getZoomChipStyle(activeRegion.style)}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSetPhotoCrop(
+                              project.activePhotoId,
+                              scalePhotoCropFromAnchor(
+                                activeCrop,
+                                clamp(activeCrop.scale - 0.06, 0.2, 2.6),
+                                0.5,
+                                0.5,
+                                activeRegion.source.width,
+                                activeRegion.source.height,
+                                activeRegion.region.rect.width,
+                                activeRegion.region.rect.height
+                              )
+                            )
+                          }
+                          aria-label="缩小"
+                        >
+                          -
+                        </button>
+                        <span>{`${Math.round(activeCrop.scale * 100)}%`}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSetPhotoCrop(
+                              project.activePhotoId,
+                              scalePhotoCropFromAnchor(
+                                activeCrop,
+                                clamp(activeCrop.scale + 0.06, 0.2, 2.6),
+                                0.5,
+                                0.5,
+                                activeRegion.source.width,
+                                activeRegion.source.height,
+                                activeRegion.region.rect.width,
+                                activeRegion.region.rect.height
+                              )
+                            )
+                          }
+                          aria-label="放大"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              ) : null}
+              )}
             </div>
+          </div>
+
+          <div className="reference-stage-foot">
+            <span>{project.fillBlockEnabled ? "填充块已开启" : "填充块已关闭"}</span>
+            <span>桌面端可滚轮缩放、拖动平移</span>
           </div>
         </div>
 
-        <aside className="editor-sidebar">
-          <div className="sidebar-header">
-            <div>
-              <p className="eyebrow">Controls</p>
-              <h2>编辑参数</h2>
-            </div>
-            <p className="sidebar-header-note">
-              {project.activePhotoId ? "当前以画板中的激活图片为编辑对象。" : "等待选择图片。"}
-            </p>
+        <aside className="editor-sidebar reference-sidebar">
+          <div className="sidebar-panel-tabs">
+            {([["layout", "布局"], ["fill", "填充块"], ["dots", "波点"]] as [PanelKey, string][]).map(
+              ([key, label]) => (
+                <button
+                  key={key}
+                  className={`sidebar-tab ${activePanel === key ? "active" : ""}`}
+                  onClick={() => onActivePanelChange(key)}
+                >
+                  {label}
+                </button>
+              )
+            )}
           </div>
 
-          <div className="mobile-panel-switch">
-            {(["layout", "fill", "dots"] as PanelKey[]).map((panel) => (
-              <button
-                key={panel}
-                className={panel === activePanel ? "active" : ""}
-                onClick={() => onActivePanelChange(panel)}
-              >
-                {panel === "layout" ? "布局" : panel === "fill" ? "填充块" : "波点"}
-              </button>
-            ))}
-          </div>
-
-          <div className={`panel-card sidebar-panel ${activePanel === "layout" ? "active-mobile-panel" : ""}`}>
+          <div className={`panel-card sidebar-panel reference-panel ${activePanel === "layout" ? "active-mobile-panel" : ""}`}>
             <LayoutPanel
               photoCount={sources.length}
-              layoutMode={project.layoutMode}
               layoutDirection={project.layoutDirection}
               fillBlockEnabled={project.fillBlockEnabled}
               value={project.layout}
@@ -559,7 +595,7 @@ export function EditorScreen({
             />
           </div>
 
-          <div className={`panel-card sidebar-panel ${activePanel === "fill" ? "active-mobile-panel" : ""}`}>
+          <div className={`panel-card sidebar-panel reference-panel ${activePanel === "fill" ? "active-mobile-panel" : ""}`}>
             <FillPanel
               photoCount={sources.length}
               theme={theme}
@@ -574,7 +610,7 @@ export function EditorScreen({
             />
           </div>
 
-          <div className={`panel-card sidebar-panel ${activePanel === "dots" ? "active-mobile-panel" : ""}`}>
+          <div className={`panel-card sidebar-panel reference-panel ${activePanel === "dots" ? "active-mobile-panel" : ""}`}>
             <DotsPanel
               value={project.dots}
               fillBlockEnabled={project.fillBlockEnabled}
@@ -589,7 +625,6 @@ export function EditorScreen({
 
 function LayoutPanel({
   photoCount,
-  layoutMode,
   layoutDirection,
   fillBlockEnabled,
   value,
@@ -599,7 +634,6 @@ function LayoutPanel({
   onChange
 }: {
   photoCount: number;
-  layoutMode: LayoutMode;
   layoutDirection: LayoutDirection;
   fillBlockEnabled: boolean;
   value: LayoutSettings;
@@ -609,89 +643,25 @@ function LayoutPanel({
   onChange: (patch: Partial<LayoutSettings>) => void;
 }) {
   const isSingle = photoCount <= 1;
-  const currentPreset = isSingle
-    ? !fillBlockEnabled
-      ? "single"
-      : layoutDirection === "horizontal"
-        ? "single-horizontal-fill"
-        : "single-vertical-fill"
-    : !fillBlockEnabled
-      ? layoutDirection === "horizontal"
-        ? "double-horizontal"
-        : "double-vertical"
-      : layoutDirection === "horizontal"
-        ? "double-horizontal-fill"
-        : "double-vertical-fill";
+  const options = [
+    {
+      key: "horizontal",
+      label: "左右分块",
+      description: isSingle ? "单图时搭配右侧填充块，双图时左右并排。" : "两张照片左右展示。"
+    },
+    {
+      key: "vertical",
+      label: "上下分块",
+      description: isSingle ? "单图时搭配下方填充块，双图时上下并排。" : "两张照片上下展示。"
+    }
+  ];
 
-  const options = isSingle
-    ? [
-        { key: "single", label: "单图", description: "只保留一张完整照片。" },
-        {
-          key: "single-horizontal-fill",
-          label: "左右分块",
-          description: "单图加右侧填充块。"
-        },
-        {
-          key: "single-vertical-fill",
-          label: "上下分块",
-          description: "单图加下方填充块。"
-        }
-      ]
-    : [
-        { key: "double-horizontal", label: "双图", description: "左右展示两张照片。" },
-        { key: "double-vertical", label: "双图上下", description: "上下展示两张照片。" },
-        {
-          key: "double-horizontal-fill",
-          label: "双图 + 填充块",
-          description: "两张图再加右侧填充块。"
-        },
-        {
-          key: "double-vertical-fill",
-          label: "双图 + 底带",
-          description: "两张图加下方填充块。"
-        }
-      ];
-
-  const applyPreset = (preset: string) => {
-    if (preset === "single") {
-      onLayoutModeChange("single");
-      onFillToggle(false);
-      onDirectionChange("horizontal");
-      return;
-    }
-    if (preset === "single-horizontal-fill") {
-      onLayoutModeChange("single");
+  const applyDirection = (direction: LayoutDirection) => {
+    onLayoutModeChange(isSingle ? "single" : "double");
+    onDirectionChange(direction);
+    if (isSingle && !fillBlockEnabled) {
       onFillToggle(true);
-      onDirectionChange("horizontal");
-      return;
     }
-    if (preset === "single-vertical-fill") {
-      onLayoutModeChange("single");
-      onFillToggle(true);
-      onDirectionChange("vertical");
-      return;
-    }
-    if (preset === "double-horizontal") {
-      onLayoutModeChange("double");
-      onFillToggle(false);
-      onDirectionChange("horizontal");
-      return;
-    }
-    if (preset === "double-vertical") {
-      onLayoutModeChange("double");
-      onFillToggle(false);
-      onDirectionChange("vertical");
-      return;
-    }
-    if (preset === "double-horizontal-fill") {
-      onLayoutModeChange("double");
-      onFillToggle(true);
-      onDirectionChange("horizontal");
-      return;
-    }
-    onLayoutModeChange("double");
-    onFillToggle(true);
-    onDirectionChange("vertical");
   };
 
   return (
@@ -699,38 +669,21 @@ function LayoutPanel({
       <div className="panel-section-head">
         <span className="panel-kicker">Layout</span>
         <h2>布局</h2>
-        <p>先把单图和双图做准，方向和填充块都在这里切换。</p>
+        <p>这里只保留左右和上下两种分块，单图或双图由当前图片数量自动决定。</p>
       </div>
 
-      <div className="choice-grid">
+      <div className="choice-grid compact-two">
         {options.map((option) => (
           <button
             key={option.key}
             type="button"
-            className={`choice-card ${currentPreset === option.key ? "active" : ""}`}
-            onClick={() => applyPreset(option.key)}
+            className={`choice-card ${layoutDirection === option.key ? "active" : ""}`}
+            onClick={() => applyDirection(option.key as LayoutDirection)}
           >
             <span>{option.label}</span>
             <small>{option.description}</small>
           </button>
         ))}
-      </div>
-
-      <div className="segmented-control">
-        <button
-          type="button"
-          className={layoutDirection === "horizontal" ? "active" : ""}
-          onClick={() => onDirectionChange("horizontal")}
-        >
-          左右
-        </button>
-        <button
-          type="button"
-          className={layoutDirection === "vertical" ? "active" : ""}
-          onClick={() => onDirectionChange("vertical")}
-        >
-          上下
-        </button>
       </div>
 
       <ControlSelect
@@ -762,8 +715,8 @@ function LayoutPanel({
       />
       <ControlRange
         label="填充块占比"
-        min={16}
-        max={36}
+        min={14}
+        max={28}
         step={1}
         value={Math.round(value.fillRatio * 100)}
         onChange={(next) => onChange({ fillRatio: next / 100 })}
@@ -880,8 +833,8 @@ function FillPanel({
       />
       <ControlRange
         label="条纹粗细"
-        min={12}
-        max={52}
+        min={24}
+        max={64}
         step={1}
         value={value.stripeThickness}
         onChange={(next) => onChange({ stripeThickness: next })}
@@ -1143,7 +1096,14 @@ function ControlColor({
 }
 
 function normalizeColor(color: string) {
-  return color.startsWith("#") ? color : "#2b6f89";
+  const trimmed = color.trim().toLowerCase();
+  const isValidCssColor =
+    trimmed.startsWith("#") ||
+    trimmed.startsWith("rgb(") ||
+    trimmed.startsWith("rgba(") ||
+    trimmed.startsWith("hsl(") ||
+    trimmed.startsWith("hwb(");
+  return isValidCssColor ? color : "#2b6f89";
 }
 
 function getZoomChipStyle(style: Record<string, string>) {

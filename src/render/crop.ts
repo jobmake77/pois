@@ -10,7 +10,7 @@ export interface CropGeometry {
   maxShiftY: number;
 }
 
-const MIN_SCALE = 1;
+const MIN_SCALE = 0.2;
 const MAX_SCALE = 2.6;
 
 export function createDefaultPhotoCrop(

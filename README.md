@@ -18,13 +18,13 @@ Pois Art 是一个移动端优先的照片海报生成 Web 应用。当前版本
 
 更详细的实现状态见：
 
-- [当前实现进展文档](/Users/a77/Desktop/pois/docs/IMPLEMENTATION_STATUS.md)
+- [当前实现进展文档](./docs/IMPLEMENTATION_STATUS.md)
 
 ## 当前已完成内容
 
 ### 1. 产品主流程
 
-- 首页只保留 hero + 2 张开场示例
+- 首页只保留 hero + 上传入口
 - 上传图片后自动进入编辑页
 - 单图自动生成首版，不要求用户先理解参数
 - 支持随机、切换布局、开关填充块、切换波点风格
@@ -37,7 +37,7 @@ Pois Art 是一个移动端优先的照片海报生成 Web 应用。当前版本
   - `单图 + 填充块`
   - `双图`
   - `双图 + 填充块`
-- 当前 UI 里把旧的“主题块”统一改成 `填充块`
+- 当前 UI 里把旧的"主题块"统一改成 `填充块`
 - 单图默认：
   - 启用填充块
   - 默认方向为左右分块
@@ -89,8 +89,7 @@ Pois Art 是一个移动端优先的照片海报生成 Web 应用。当前版本
 
 ## 当前限制
 
-- 当前先收敛到 `最多 2 张照片`
-- 三拼 / 四拼暂时不做
+- 当前先收敛到 `最多 2 张照片`，更复杂的多图拼贴不在此阶段范围内
 - 还没有撤销 / 重做
 - 还没有自动化测试
 - 真机上的细致手势手感还需要继续打磨
@@ -106,11 +105,12 @@ src/
     ExportSheet.tsx           导出结果浮层
   render/
     blockLayout.ts            单图 / 双图 / 填充块布局求解
+    crop.ts                   照片裁切几何与约束
     engine.ts                 画板渲染主引擎
+    random.ts                 随机与数学工具
+    shapes.ts                 形状路径生成
     worker.ts                 导出 Worker
     workerClient.ts           Worker 调用封装
-    shapes.ts                 形状路径生成
-    random.ts                 随机与数学工具
   presets.ts                  默认参数与主题模板
   types.ts                    核心类型定义
   styles.css                  全局样式与移动端适配
@@ -131,18 +131,6 @@ npm run dev
 npm run build
 npm run preview
 ```
-
-## 当前验证
-
-已完成本地构建验证：
-
-```bash
-PATH=/Users/a77/.local/node/node-v20.18.0-darwin-arm64/bin:$PATH npm run build
-```
-
-当前本地开发地址：
-
-- [http://localhost:5174/](http://localhost:5174/)
 
 ## 说明
 

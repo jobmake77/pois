@@ -158,7 +158,20 @@ export async function drawPoster(
     drawCroppedImage(context, source.image, source.width, source.height, region.rect, crop);
   });
 
-  drawShapeDots(context, input, regions, sources, sourceMap, samplers, rng);
+  const crossSources = createRegionCrossSources(context, regions);
+  const crossSamplers = createSamplers(Array.from(crossSources.values()));
+  const swapMap = new Map<string, { source: CanvasSource; sampler: Sampler }>();
+  regions.forEach((region, index) => {
+    const counterpartId = getCounterpartRegionId(region, index, regions);
+    if (!counterpartId) return;
+    const source = crossSources.get(counterpartId);
+    const sampler = source ? crossSamplers.get(source.id) : undefined;
+    if (source && sampler) {
+      swapMap.set(region.id, { source, sampler });
+    }
+  });
+
+  drawShapeDots(context, input, regions, sources, sourceMap, samplers, swapMap, rng);
 }
 
 function normalizeSources(sources: SourceAsset[]): CanvasSource[] {
@@ -178,7 +191,7 @@ function createSamplers(sources: CanvasSource[]) {
       typeof OffscreenCanvas !== "undefined"
         ? new OffscreenCanvas(size, size)
         : document.createElement("canvas");
-    if (canvas instanceof HTMLCanvasElement) {
+    if (typeof HTMLCanvasElement !== "undefined" && canvas instanceof HTMLCanvasElement) {
       canvas.width = size;
       canvas.height = size;
     }
@@ -190,6 +203,63 @@ function createSamplers(sources: CanvasSource[]) {
     map.set(source.id, { context: samplerContext });
   }
   return map;
+}
+
+function createRegionCrossSources(
+  context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  regions: CanvasRegion[]
+) {
+  const map = new Map<string, CanvasSource>();
+  const canvasEl = context.canvas;
+  for (const region of regions) {
+    const maxSize = 320;
+    let sw = region.rect.width;
+    let sh = region.rect.height;
+    if (sw > maxSize || sh > maxSize) {
+      const scale = maxSize / Math.max(sw, sh);
+      sw = Math.floor(sw * scale);
+      sh = Math.floor(sh * scale);
+    }
+    sw = Math.max(1, sw);
+    sh = Math.max(1, sh);
+    const canvas =
+      typeof OffscreenCanvas !== "undefined"
+        ? new OffscreenCanvas(sw, sh)
+        : document.createElement("canvas");
+    if (typeof HTMLCanvasElement !== "undefined" && canvas instanceof HTMLCanvasElement) {
+      canvas.width = sw;
+      canvas.height = sh;
+    }
+    const samplerContext = canvas.getContext("2d");
+    if (!samplerContext) {
+      continue;
+    }
+    samplerContext.drawImage(
+      canvasEl as CanvasImageSource,
+      region.rect.x,
+      region.rect.y,
+      region.rect.width,
+      region.rect.height,
+      0,
+      0,
+      sw,
+      sh
+    );
+    map.set(region.id, {
+      id: `cross-${region.id}`,
+      width: sw,
+      height: sh,
+      image: canvas
+    });
+  }
+  return map;
+}
+
+function getCounterpartRegionId(region: CanvasRegion, index: number, regions: CanvasRegion[]) {
+  const other = regions.find((r, i) => i !== index && r.kind !== region.kind);
+  if (other) return other.id;
+  const anyOther = regions.find((r, i) => i !== index);
+  return anyOther?.id;
 }
 
 function drawFallbackPhoto(
@@ -285,6 +355,7 @@ function drawShapeDots(
   sources: CanvasSource[],
   sourceMap: Map<string, CanvasSource>,
   samplers: Map<string, Sampler>,
+  swapMap: Map<string, { source: CanvasSource; sampler: Sampler }>,
   rng: () => number
 ) {
   const photoRegions = regions.filter((region) => region.kind === "photo");
@@ -307,6 +378,7 @@ function drawShapeDots(
     sources,
     sourceMap,
     samplers,
+    swapMap,
     rng,
     input.project.dots.photoBlockDistribution,
     true
@@ -319,6 +391,7 @@ function drawShapeDots(
     sources,
     sourceMap,
     samplers,
+    swapMap,
     rng,
     input.project.dots.fillBlockDistribution,
     false
@@ -343,6 +416,7 @@ function distributeDots(
   sources: CanvasSource[],
   sourceMap: Map<string, CanvasSource>,
   samplers: Map<string, Sampler>,
+  swapMap: Map<string, { source: CanvasSource; sampler: Sampler }>,
   rng: () => number,
   distribution: Distribution,
   avoidCenter: boolean
@@ -362,16 +436,22 @@ function distributeDots(
       avoidCenter: avoidCenter ? 0.12 : 0
     });
 
+    const swap = swapMap.get(region.id);
+    const photoCrop =
+      !swap && region.kind === "photo" && region.photoId
+        ? (input.project.photoCrops[region.photoId] ?? { x: 0, y: 0, scale: 1 })
+        : null;
+
     points.forEach((point, pointIndex) => {
       const size = Math.max(
         12,
         input.project.dots.dotSize + (rng() - 0.5) * input.project.dots.sizeVariance
       );
-      const source = pickSourceForRegion(region, pointIndex, regionIndex, sources, sourceMap);
-      const sampler = source ? samplers.get(source.id) : undefined;
+      const source = swap?.source ?? pickSourceForRegion(region, pointIndex, regionIndex, sources, sourceMap);
+      const sampler = swap?.sampler ?? (source ? samplers.get(source.id) : undefined);
       const color =
         sampler && source
-          ? sampleColor(sampler, point.x, point.y, region.rect)
+          ? sampleColor(sampler, point.x, point.y, region.rect, photoCrop, source)
           : input.theme.palette.accent;
 
       context.save();
@@ -383,7 +463,7 @@ function distributeDots(
       context.translate(-point.x, -point.y);
       context.clip(path);
       if (input.project.dots.fillMode === "image-cutout" && source) {
-        drawCutout(context, source, point.x, point.y, Math.max(16, size * 1.6), region.rect);
+        drawCutout(context, source, photoCrop, point.x, point.y, Math.max(16, size * 1.6), region.rect);
       } else {
         context.fillStyle =
           input.project.dots.fillMode === "solid" ? input.theme.palette.accent : color;
@@ -554,9 +634,38 @@ function distanceSquared(ax: number, ay: number, bx: number, by: number) {
   return dx * dx + dy * dy;
 }
 
-function sampleColor(sampler: Sampler, x: number, y: number, rect: Rect) {
-  const sx = clamp(Math.floor(((x - rect.x) / rect.width) * 63), 0, 63);
-  const sy = clamp(Math.floor(((y - rect.y) / rect.height) * 63), 0, 63);
+function sampleColor(
+  sampler: Sampler,
+  x: number,
+  y: number,
+  rect: Rect,
+  photoCrop: { x: number; y: number; scale: number } | null,
+  source: CanvasSource
+) {
+  const normalizedX = clamp((x - rect.x) / rect.width, 0, 1);
+  const normalizedY = clamp((y - rect.y) / rect.height, 0, 1);
+
+  const samplerW = sampler.context.canvas.width - 1;
+  const samplerH = sampler.context.canvas.height - 1;
+
+  let sx: number, sy: number;
+  if (photoCrop) {
+    const { sx: cropSx, sy: cropSy, sw: cropSw, sh: cropSh } = getCropGeometry(
+      photoCrop,
+      source.width,
+      source.height,
+      rect.width,
+      rect.height
+    );
+    const srcX = cropSx + normalizedX * cropSw;
+    const srcY = cropSy + normalizedY * cropSh;
+    sx = clamp(Math.floor((srcX / source.width) * samplerW), 0, samplerW);
+    sy = clamp(Math.floor((srcY / source.height) * samplerH), 0, samplerH);
+  } else {
+    sx = clamp(Math.floor(normalizedX * samplerW), 0, samplerW);
+    sy = clamp(Math.floor(normalizedY * samplerH), 0, samplerH);
+  }
+
   const imageData = sampler.context.getImageData(sx, sy, 1, 1).data;
   return `rgba(${imageData[0]}, ${imageData[1]}, ${imageData[2]}, 1)`;
 }
@@ -564,6 +673,7 @@ function sampleColor(sampler: Sampler, x: number, y: number, rect: Rect) {
 function drawCutout(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   source: CanvasSource,
+  photoCrop: { x: number; y: number; scale: number } | null,
   x: number,
   y: number,
   size: number,
@@ -571,19 +681,26 @@ function drawCutout(
 ) {
   const normalizedX = clamp((x - rect.x) / rect.width, 0.08, 0.92);
   const normalizedY = clamp((y - rect.y) / rect.height, 0.08, 0.92);
-  const cropWidth = source.width * 0.14;
-  const cropHeight = source.height * 0.14;
-  const sx = clamp(normalizedX * source.width - cropWidth / 2, 0, source.width - cropWidth);
-  const sy = clamp(normalizedY * source.height - cropHeight / 2, 0, source.height - cropHeight);
-  context.drawImage(
-    source.image,
-    sx,
-    sy,
-    cropWidth,
-    cropHeight,
-    x - size / 2,
-    y - size / 2,
-    size,
-    size
-  );
+
+  let sx: number, sy: number, cropWidth: number, cropHeight: number;
+  if (photoCrop) {
+    const { sx: cropSx, sy: cropSy, sw: cropSw, sh: cropSh } = getCropGeometry(
+      photoCrop,
+      source.width,
+      source.height,
+      rect.width,
+      rect.height
+    );
+    cropWidth = cropSw * 0.14;
+    cropHeight = cropSh * 0.14;
+    sx = clamp(cropSx + normalizedX * cropSw - cropWidth / 2, cropSx, cropSx + cropSw - cropWidth);
+    sy = clamp(cropSy + normalizedY * cropSh - cropHeight / 2, cropSy, cropSy + cropSh - cropHeight);
+  } else {
+    cropWidth = source.width * 0.14;
+    cropHeight = source.height * 0.14;
+    sx = clamp(normalizedX * source.width - cropWidth / 2, 0, source.width - cropWidth);
+    sy = clamp(normalizedY * source.height - cropHeight / 2, 0, source.height - cropHeight);
+  }
+
+  context.drawImage(source.image, sx, sy, cropWidth, cropHeight, x - size / 2, y - size / 2, size, size);
 }

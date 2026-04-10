@@ -76,7 +76,8 @@ function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectSt
     dots: {
       ...defaultDots,
       ...theme.dots,
-      ...draft?.dots
+      ...draft?.dots,
+      fillMode: "image-cutout" as const
     },
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
@@ -310,18 +311,26 @@ export default function App() {
       },
       dots: {
         ...current.dots,
-        ...nextTheme.dots
+        ...nextTheme.dots,
+        fillMode: "image-cutout" as const
       }
     }));
     setRenderTick((current) => current + 1);
   };
 
   const handleRandomize = () => {
+    const shapes: Array<typeof defaultDots.shape> = ["star", "drop", "snowflake", "circle", "square"];
+    const baseStyles: Array<typeof defaultBase.style> = ["solid", "stripes", "duotone", "pixel"];
     setProject((current) => ({
       ...current,
+      base: {
+        ...current.base,
+        style: baseStyles[Math.floor(Math.random() * baseStyles.length)]
+      },
       dots: {
         ...current.dots,
-        seed: current.dots.seed + 17
+        seed: current.dots.seed + 17,
+        shape: shapes[Math.floor(Math.random() * shapes.length)]
       }
     }));
   };
@@ -332,7 +341,7 @@ export default function App() {
     }
 
     setExportPending(true);
-    setPreviewStatus("正在生成高清图...");
+    setPreviewStatus("正在生成海报...");
     if (exportPreview) {
       URL.revokeObjectURL(exportPreview.url);
       setExportPreview(null);
@@ -358,10 +367,54 @@ export default function App() {
         url,
         durationMs: result.durationMs
       });
-      setPreviewStatus("高清图已生成");
+      setPreviewStatus("海报已生成");
     } catch (error) {
       console.error(error);
-      setPreviewStatus("高清图生成失败");
+      setPreviewStatus("海报生成失败");
+    } finally {
+      setExportPending(false);
+    }
+  };
+
+  const handleOriginalExport = async () => {
+    if (activeSources.length === 0) {
+      return;
+    }
+    setExportPending(true);
+    setPreviewStatus("正在生成原图...");
+    try {
+      const regions = resolveCanvasRegions(project, project.canvasWidth, project.canvasHeight);
+      const photoRegions = regions.filter((r) => r.kind === "photo");
+      const maxSourceWidth = Math.max(...activeSources.map((s) => s.width));
+      const maxPhotoRegionWidth = Math.max(...photoRegions.map((r) => r.rect.width), 1);
+      const ratio = Math.min(4, Math.max(2, maxSourceWidth / maxPhotoRegionWidth));
+      const renderWidth = Math.floor(project.canvasWidth * ratio);
+      const renderHeight = Math.floor(project.canvasHeight * ratio);
+
+      const renderInput = {
+        project,
+        theme,
+        sources: activeSources,
+        width: renderWidth,
+        height: renderHeight,
+        pixelRatio: 1,
+        exportQuality: 0.98
+      };
+      const mimeType = project.exportFormat === "jpeg" ? "image/jpeg" : "image/png";
+      const result = canUseWorkerExport()
+        ? await exportWithWorker(renderInput)
+        : await renderToBlobOnMain(renderInput, mimeType);
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `pois-art-original-${Date.now()}.${project.exportFormat}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setPreviewStatus("原图下载已开始");
+    } catch (error) {
+      console.error(error);
+      setPreviewStatus("原图生成失败");
     } finally {
       setExportPending(false);
     }
@@ -402,7 +455,9 @@ export default function App() {
     const link = document.createElement("a");
     link.href = exportPreview.url;
     link.download = `pois-art-${Date.now()}.${project.exportFormat}`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
   const handleShare = async () => {
@@ -595,7 +650,8 @@ export default function App() {
               ...current,
               dots: {
                 ...current.dots,
-                ...patch
+                ...patch,
+                fillMode: "image-cutout" as const
               }
             }))
           }
@@ -619,6 +675,7 @@ export default function App() {
         format={project.exportFormat}
         onClose={() => setExportPreview(null)}
         onDownload={handleDownload}
+        onDownloadOriginal={() => void handleOriginalExport()}
         onShare={() => void handleShare()}
         onCopy={() => void handleCopy()}
       />
@@ -734,7 +791,17 @@ function normalizePhotoCrops(
 function readDraft(): SavedDraft | undefined {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
-    return raw ? (JSON.parse(raw) as SavedDraft) : undefined;
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as SavedDraft;
+    if (parsed.layout && typeof parsed.layout.gap === "number") {
+      parsed.layout.gap = 0;
+    }
+    if (parsed.dots) {
+      parsed.dots.fillMode = "image-cutout";
+    }
+    return parsed;
   } catch {
     return undefined;
   }

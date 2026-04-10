@@ -5,6 +5,7 @@ interface ExportSheetProps {
   format: "png" | "jpeg";
   onClose: () => void;
   onDownload: () => void;
+  onDownloadOriginal: () => void;
   onShare: () => void;
   onCopy: () => void;
 }
@@ -14,6 +15,7 @@ export function ExportSheet({
   format,
   onClose,
   onDownload,
+  onDownloadOriginal,
   onShare,
   onCopy
 }: ExportSheetProps) {
@@ -27,7 +29,7 @@ export function ExportSheet({
         <div className="sheet-head">
           <div>
             <p className="eyebrow">导出完成</p>
-            <h2>高清海报已准备好</h2>
+            <h2>海报已准备好</h2>
             <p>生成耗时 {preview.durationMs.toFixed(0)}ms</p>
           </div>
           <button className="icon-chip" onClick={onClose}>
@@ -45,6 +47,9 @@ export function ExportSheet({
           </button>
           <button className="secondary-button" onClick={onDownload}>
             下载 {format.toUpperCase()}
+          </button>
+          <button className="primary-button" onClick={onDownloadOriginal}>
+            原图下载
           </button>
           <button className="primary-button" onClick={onShare}>
             系统分享

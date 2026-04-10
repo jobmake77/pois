@@ -6,9 +6,9 @@ import type {
 } from "./types";
 
 export const defaultLayout: LayoutSettings = {
-  padding: 8,
-  gap: 6,
-  fillRatio: 0.24,
+  padding: 6,
+  gap: 0,
+  fillRatio: 0.2,
   canvasPreset: "poster"
 };
 
@@ -16,7 +16,7 @@ export const defaultBase: BaseSettings = {
   style: "stripes",
   primaryColor: "#2b6f89",
   secondaryColor: "#f3efe3",
-  stripeThickness: 26,
+  stripeThickness: 38,
   backgroundTone: "#f8f1e5"
 };
 
@@ -46,12 +46,12 @@ export const themePresets: ThemePreset[] = [
       accent: "#7ca5dd",
       surface: "#ede7dc"
     },
-    layout: { fillRatio: 0.24 },
+    layout: { fillRatio: 0.2 },
     base: {
       style: "stripes",
       primaryColor: "#2b6f89",
       secondaryColor: "#f7f3e7",
-      stripeThickness: 26
+      stripeThickness: 38
     },
     dots: {
       shape: "star",
@@ -71,12 +71,12 @@ export const themePresets: ThemePreset[] = [
       accent: "#74c8e4",
       surface: "#f4efe3"
     },
-    layout: { fillRatio: 0.22 },
+    layout: { fillRatio: 0.19 },
     base: {
       style: "stripes",
       primaryColor: "#d4edf4",
       secondaryColor: "#f8f4e8",
-      stripeThickness: 28
+      stripeThickness: 40
     },
     dots: {
       shape: "drop",
@@ -127,7 +127,7 @@ export const themePresets: ThemePreset[] = [
       style: "stripes",
       primaryColor: "#040406",
       secondaryColor: "#fff7dc",
-      stripeThickness: 24
+      stripeThickness: 36
     },
     dots: {
       shape: "circle",
@@ -147,12 +147,12 @@ export const themePresets: ThemePreset[] = [
       accent: "#7f345e",
       surface: "#f2dfd5"
     },
-    layout: { fillRatio: 0.22 },
+    layout: { fillRatio: 0.19 },
     base: {
       style: "duotone",
       primaryColor: "#3a0222",
       secondaryColor: "#ffdcb9",
-      stripeThickness: 24
+      stripeThickness: 34
     },
     dots: {
       shape: "square",

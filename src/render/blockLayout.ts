@@ -24,12 +24,21 @@ export function resolveCanvasRegions(
   height: number
 ): CanvasRegion[] {
   const photoIds = project.photoIds.slice(0, 2);
-  const { padding, gap, fillRatio } = project.layout;
+  const effectiveDirection = getEffectiveDirection(project, width, photoIds.length);
+  const effectivePadding = width < 520 ? Math.min(project.layout.padding, 4) : project.layout.padding;
+  const effectiveGap = width < 520 ? Math.min(project.layout.gap, 3) : project.layout.gap;
+  const effectiveFillRatio = getEffectiveFillRatio(
+    project.layout.fillRatio,
+    effectiveDirection,
+    width,
+    photoIds.length,
+    project.fillBlockEnabled
+  );
   const contentRect: Rect = {
-    x: padding,
-    y: padding,
-    width: Math.max(1, width - padding * 2),
-    height: Math.max(1, height - padding * 2)
+    x: effectivePadding,
+    y: effectivePadding,
+    width: Math.max(1, width - effectivePadding * 2),
+    height: Math.max(1, height - effectivePadding * 2)
   };
 
   if (photoIds.length === 0) {
@@ -41,20 +50,20 @@ export function resolveCanvasRegions(
     return resolveSingleRegions(
       photoIds[0],
       contentRect,
-      project.layoutDirection,
+      effectiveDirection,
       project.fillBlockEnabled,
-      fillRatio,
-      gap
+      effectiveFillRatio,
+      effectiveGap
     );
   }
 
   return resolveDoubleRegions(
     photoIds,
     contentRect,
-    project.layoutDirection,
+    effectiveDirection,
     project.fillBlockEnabled,
-    fillRatio,
-    gap
+    effectiveFillRatio,
+    effectiveGap
   );
 }
 
@@ -76,10 +85,48 @@ export function getSuggestedEditorState(photoCount: number) {
 
 export function getDefaultLayoutMetrics() {
   return {
-    padding: 8,
-    gap: 6,
-    fillRatio: 0.24
+    padding: 6,
+    gap: 0,
+    fillRatio: 0.2
   };
+}
+
+function getEffectiveDirection(project: ProjectState, width: number, photoCount: number) {
+  if (!project.fillBlockEnabled) {
+    return project.layoutDirection;
+  }
+  if (width >= 680) {
+    return project.layoutDirection;
+  }
+  if (photoCount === 1) {
+    return "vertical" as const;
+  }
+  if (photoCount >= 2 && project.layoutDirection === "horizontal") {
+    return "vertical" as const;
+  }
+  return project.layoutDirection;
+}
+
+function getEffectiveFillRatio(
+  fillRatio: number,
+  direction: LayoutDirection,
+  width: number,
+  photoCount: number,
+  fillEnabled: boolean
+) {
+  if (!fillEnabled) {
+    return fillRatio;
+  }
+  if (width >= 680) {
+    return fillRatio;
+  }
+  if (photoCount === 1 && direction === "vertical") {
+    return Math.max(fillRatio, 0.26);
+  }
+  if (photoCount >= 2 && direction === "vertical") {
+    return Math.max(fillRatio, 0.22);
+  }
+  return fillRatio;
 }
 
 function resolveSingleRegions(
