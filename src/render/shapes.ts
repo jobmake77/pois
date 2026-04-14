@@ -39,6 +39,12 @@ export function createShapePath(
     return path;
   }
 
+  if (shape === "text") {
+    // 对于文本形状，我们创建一个矩形路径作为边界
+    path.rect(x - half, y - half, size, size);
+    return path;
+  }
+
   const spikes = 5;
   const outer = half;
   const inner = half * 0.46;

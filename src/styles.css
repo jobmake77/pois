@@ -1088,6 +1088,25 @@ img {
   accent-color: var(--accent);
 }
 
+.control-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-checkbox input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.control-checkbox span {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
 .panel-note {
   margin: 0;
   font-size: 0.9rem;

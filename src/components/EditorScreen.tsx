@@ -857,7 +857,8 @@ function DotsPanel({
     { key: "drop", label: "水滴", symbol: "◉" },
     { key: "snowflake", label: "雪花", symbol: "✳" },
     { key: "circle", label: "圆点", symbol: "●" },
-    { key: "square", label: "方块", symbol: "■" }
+    { key: "square", label: "方块", symbol: "■" },
+    { key: "text", label: "文本", symbol: "T" }
   ];
 
   return (
@@ -880,6 +881,29 @@ function DotsPanel({
           onClick: () => onChange({ shape: item.key as ShapeKind })
         }))}
       />
+
+      {value.shape === "text" && (
+        <>
+          <div className="control-group">
+            <label className="control-label">文本内容</label>
+            <input
+              type="text"
+              value={value.textContent}
+              onChange={(e) => onChange({ textContent: e.target.value })}
+              className="control-input"
+              placeholder="输入文本"
+            />
+          </div>
+          <ControlRange
+            label="字体大小"
+            min={8}
+            max={40}
+            step={1}
+            value={value.fontSize}
+            onChange={(next) => onChange({ fontSize: next })}
+          />
+        </>
+      )}
 
       <ControlSelect
         label="采样方式"
@@ -968,6 +992,17 @@ function DotsPanel({
         value={Math.round(value.opacity * 100)}
         onChange={(next) => onChange({ opacity: next / 100 })}
       />
+      <div className="control-group">
+        <label className="control-label">大小变化</label>
+        <div className="control-checkbox">
+          <input
+            type="checkbox"
+            checked={value.useSizeVariance}
+            onChange={(e) => onChange({ useSizeVariance: e.target.checked })}
+          />
+          <span>启用波点大小变化</span>
+        </div>
+      </div>
       {!fillBlockEnabled ? <p className="panel-note">当前未启用填充块，相关波点只会出现在照片块里。</p> : null}
     </div>
   );

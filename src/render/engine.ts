@@ -158,14 +158,25 @@ export async function drawPoster(
     drawCroppedImage(context, source.image, source.width, source.height, region.rect, crop);
   });
 
+  // 创建交叉源和采样器，用于颜色交换
+  // 对于填充区域，我们需要从绘制结果中采样颜色
   const crossSources = createRegionCrossSources(context, regions);
   const crossSamplers = createSamplers(Array.from(crossSources.values()));
+  
+  // 创建交换映射
   const swapMap = new Map<string, { source: CanvasSource; sampler: Sampler }>();
   regions.forEach((region, index) => {
     const counterpartId = getCounterpartRegionId(region, index, regions);
     if (!counterpartId) return;
+    
+    // 找到对应的区域
+    const counterpartRegion = regions.find(r => r.id === counterpartId);
+    if (!counterpartRegion) return;
+    
+    // 获取对应的交叉源和采样器
     const source = crossSources.get(counterpartId);
     const sampler = source ? crossSamplers.get(source.id) : undefined;
+    
     if (source && sampler) {
       swapMap.set(region.id, { source, sampler });
     }
@@ -443,10 +454,13 @@ function distributeDots(
         : null;
 
     points.forEach((point, pointIndex) => {
-      const size = Math.max(
-        12,
-        input.project.dots.dotSize + (rng() - 0.5) * input.project.dots.sizeVariance
-      );
+      // 根据useSizeVariance字段决定是否使用大小变化
+      const size = input.project.dots.shape === "text" || !input.project.dots.useSizeVariance
+        ? Math.max(12, input.project.dots.dotSize)
+        : Math.max(
+            12,
+            input.project.dots.dotSize + (rng() - 0.5) * input.project.dots.sizeVariance
+          );
       const source = swap?.source ?? pickSourceForRegion(region, pointIndex, regionIndex, sources, sourceMap);
       const sampler = swap?.sampler ?? (source ? samplers.get(source.id) : undefined);
       const color =
@@ -461,13 +475,32 @@ function distributeDots(
       context.translate(point.x, point.y);
       context.rotate((rng() - 0.5) * 0.68);
       context.translate(-point.x, -point.y);
-      context.clip(path);
-      if (input.project.dots.fillMode === "image-cutout" && source) {
-        drawCutout(context, source, photoCrop, point.x, point.y, Math.max(16, size * 1.6), region.rect);
+      
+      if (input.project.dots.shape === "text") {
+        // 绘制文本波点
+        // 对于颜色交换，我们使用与普通波点相同的逻辑
+        if (input.project.dots.fillMode === "image-cutout" && source) {
+          // 对于image-cutout模式，使用交换的源图像颜色
+          context.fillStyle = color;
+        } else {
+          // 对于其他模式，使用相应的颜色逻辑
+          context.fillStyle = input.project.dots.fillMode === "solid" ? input.theme.palette.accent : color;
+        }
+        context.font = `${Math.max(8, size * 0.6)}px sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        const text = input.project.dots.textContent || "POIS";
+        context.fillText(text, point.x, point.y);
       } else {
-        context.fillStyle =
-          input.project.dots.fillMode === "solid" ? input.theme.palette.accent : color;
-        context.fill(path);
+        // 绘制普通形状波点
+        context.clip(path);
+        if (input.project.dots.fillMode === "image-cutout" && source) {
+          drawCutout(context, source, photoCrop, point.x, point.y, Math.max(16, size * 1.6), region.rect);
+        } else {
+          context.fillStyle =
+            input.project.dots.fillMode === "solid" ? input.theme.palette.accent : color;
+          context.fill(path);
+        }
       }
       context.restore();
     });
@@ -503,13 +536,30 @@ function drawDecorativeDots(
       avoidCenter: avoidCenter ? 0.16 : 0
     });
     points.forEach((point, pointIndex) => {
-      const size = input.project.dots.dotSize * lerp(0.86, 1.36, rng());
-      const path = createShapePath(input.project.dots.shape, point.x, point.y, size);
+      // 根据useSizeVariance字段决定是否使用大小变化
+      const size = input.project.dots.shape === "text" || !input.project.dots.useSizeVariance
+        ? Math.max(12, input.project.dots.dotSize)
+        : input.project.dots.dotSize * lerp(0.86, 1.36, rng());
       context.save();
       clipToRect(context, region.rect);
       context.globalAlpha = region.kind === "fill" ? 0.46 : 0.36;
-      context.fillStyle = colors[(regionIndex + pointIndex) % colors.length];
-      context.fill(path);
+      
+      // 对于文本形状，使用与主要波点相同的颜色逻辑
+      if (input.project.dots.shape === "text") {
+        // 绘制文本装饰波点
+        // 使用与主要波点相同的颜色
+        context.fillStyle = colors[(regionIndex + pointIndex) % colors.length];
+        context.font = `${Math.max(8, size * 0.6)}px sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        const text = input.project.dots.textContent || "POIS";
+        context.fillText(text, point.x, point.y);
+      } else {
+        // 绘制普通形状装饰波点
+        context.fillStyle = colors[(regionIndex + pointIndex) % colors.length];
+        const path = createShapePath(input.project.dots.shape, point.x, point.y, size);
+        context.fill(path);
+      }
       context.restore();
     });
   });

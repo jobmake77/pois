@@ -32,7 +32,10 @@ export const defaultDots: DotSettings = {
   fillBlockDistribution: "random",
   fillMode: "image-cutout",
   opacity: 0.94,
-  seed: 7
+  seed: 7,
+  textContent: "POIS",
+  fontSize: 20,
+  useSizeVariance: true
 };
 
 export const themePresets: ThemePreset[] = [

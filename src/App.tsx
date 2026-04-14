@@ -91,7 +91,7 @@ export default function App() {
   const [project, setProject] = useState<ProjectState>(() =>
     createInitialProject(initialTheme, initialDraft)
   );
-  const [screen, setScreen] = useState<Screen>("home");
+  const [screen, setScreen] = useState<Screen>("editor");
   const [sources, setSources] = useState<SourceAsset[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>("layout");
   const [previewStatus, setPreviewStatus] = useState("等待图片上传");
@@ -295,6 +295,17 @@ export default function App() {
         : "已接收素材，准备生成..."
     );
     setRenderTick((current) => current + 1);
+    
+    // 强制更新预览尺寸，确保渲染能够正常进行
+    setTimeout(() => {
+      const canvas = previewCanvasRef.current;
+      const shell = canvas?.parentElement;
+      if (canvas && shell) {
+        const width = Math.max(1, Math.round(shell.clientWidth));
+        const height = Math.max(1, Math.round(shell.clientHeight));
+        setPreviewSize({ width, height });
+      }
+    }, 100);
   };
 
   const handleThemeChange = (themeId: string) => {
@@ -319,7 +330,7 @@ export default function App() {
   };
 
   const handleRandomize = () => {
-    const shapes: Array<typeof defaultDots.shape> = ["star", "drop", "snowflake", "circle", "square"];
+    const shapes: Array<typeof defaultDots.shape> = ["star", "drop", "snowflake", "circle", "square", "text"];
     const baseStyles: Array<typeof defaultBase.style> = ["solid", "stripes", "duotone", "pixel"];
     setProject((current) => ({
       ...current,
@@ -550,7 +561,6 @@ export default function App() {
               };
             });
             if (nextSources.length === 0) {
-              setScreen("home");
               setPreviewStatus("等待图片上传");
             }
           }}
@@ -664,7 +674,7 @@ export default function App() {
           onRandomize={handleRandomize}
           onExport={() => void handleExport()}
           onBack={() => {
-            setScreen("home");
+            // 不返回首页，保持在编辑页面
             setPreviewStatus("等待图片上传");
           }}
         />

@@ -1,5 +1,5 @@
 export type Screen = "home" | "editor";
-export type ShapeKind = "star" | "drop" | "snowflake" | "circle" | "square";
+export type ShapeKind = "star" | "drop" | "snowflake" | "circle" | "square" | "text";
 export type BaseStyle = "solid" | "stripes" | "duotone" | "pixel";
 export type Distribution = "random" | "grid" | "bottom-heavy";
 export type FillMode = "image-cutout" | "color-sample" | "solid";
@@ -49,6 +49,9 @@ export interface DotSettings {
   fillMode: FillMode;
   opacity: number;
   seed: number;
+  textContent: string;
+  fontSize: number;
+  useSizeVariance: boolean;
 }
 
 export interface PhotoCrop {
