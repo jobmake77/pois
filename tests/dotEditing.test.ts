@@ -18,7 +18,6 @@ test("single-side stores a stroke only on the targeted panel", () => {
       { xRatio: 0.34, yRatio: 0.62 },
       { xRatio: 0.42, yRatio: 0.68 }
     ],
-    12,
     "same-size"
   );
 
@@ -38,7 +37,6 @@ test("double-side stores one shared stroke", () => {
       { xRatio: 0.28, yRatio: 0.41 },
       { xRatio: 0.35, yRatio: 0.49 }
     ],
-    12,
     "same-size"
   );
 
@@ -59,7 +57,6 @@ test("brush size modes write ordered size multipliers", () => {
       { xRatio: 0.2, yRatio: 0.3 },
       { xRatio: 0.3, yRatio: 0.4 }
     ],
-    12,
     "large-to-small"
   );
   const ascending = addDotStroke(
@@ -71,7 +68,6 @@ test("brush size modes write ordered size multipliers", () => {
       { xRatio: 0.2, yRatio: 0.3 },
       { xRatio: 0.3, yRatio: 0.4 }
     ],
-    12,
     "small-to-large"
   );
 
@@ -87,7 +83,6 @@ test("undo removes only the latest stroke", () => {
     "single-side",
     "primary",
     [{ xRatio: 0.1, yRatio: 0.2 }],
-    12,
     "same-size"
   );
   placements = addDotStroke(
@@ -95,7 +90,6 @@ test("undo removes only the latest stroke", () => {
     "single-side",
     "primary",
     [{ xRatio: 0.2, yRatio: 0.3 }],
-    12,
     "same-size"
   );
   placements = undoLastDotStroke(placements);
@@ -111,7 +105,6 @@ test("clear removes all manual placements and stroke history", () => {
     "double-side",
     "primary",
     [{ xRatio: 0.4, yRatio: 0.5 }],
-    12,
     "same-size"
   );
 

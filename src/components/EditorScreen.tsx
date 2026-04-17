@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
   RefObject,
   WheelEvent as ReactWheelEvent
 } from "react";
 import {
   Download,
-  Shuffle,
   Upload
 } from "lucide-react";
 import type { CanvasPanel } from "../render/blockLayout";
@@ -17,6 +17,7 @@ import {
   translatePhotoCrop
 } from "../render/crop";
 import { clamp } from "../render/random";
+import { FILLED_SHAPE_GLYPHS } from "../render/shapeGlyphs";
 import type {
   BaseStyle,
   BrushMode,
@@ -55,7 +56,6 @@ interface EditorScreenProps {
   onResetTheme: () => void;
   onUpdateBase: (patch: Partial<ProjectState["base"]>) => void;
   onUpdateDots: (patch: Partial<DotSettings>) => void;
-  onRandomize: () => void;
   onExport: () => void;
   onBack: () => void;
 }
@@ -126,7 +126,6 @@ export function EditorScreen({
   onResetTheme,
   onUpdateBase,
   onUpdateDots,
-  onRandomize,
   onExport,
   onBack
 }: EditorScreenProps) {
@@ -456,8 +455,11 @@ export function EditorScreen({
   };
 
   const handleViewportPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (sources.length === 0) {
+      return;
+    }
     const target = event.target as HTMLElement;
-    if (target.closest(".preview-hit-region")) {
+    if (target.closest(".preview-hit-region, button, input, select, textarea, a")) {
       return;
     }
     panRef.current = {
@@ -491,8 +493,11 @@ export function EditorScreen({
   };
 
   const handleViewportTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (sources.length === 0) {
+      return;
+    }
     const target = event.target as HTMLElement;
-    if (target.closest(".preview-hit-region")) {
+    if (target.closest(".preview-hit-region, button, input, select, textarea, a")) {
       return;
     }
     if (event.touches.length === 1) {
@@ -637,10 +642,6 @@ export function EditorScreen({
         </div>
 
         <div className="editor-header-actions">
-          <button className="secondary-button compact reference-action" onClick={onRandomize}>
-            <Shuffle size={14} />
-            <span>随机一下</span>
-          </button>
           <button
             className="primary-button compact reference-primary-action"
             onClick={onExport}
@@ -927,15 +928,14 @@ function DotsPanel({
   onClear: () => void;
 }) {
   const shapeSwatches = [
-    { key: "star", label: "五角星", symbol: "★" },
-    { key: "drop", label: "水滴", symbol: "◉" },
-    { key: "snowflake", label: "雪花", symbol: "✳" },
-    { key: "circle", label: "圆形", symbol: "●" },
-    { key: "heart", label: "爱心", symbol: "♥" },
-    { key: "meteor", label: "流星", symbol: "☄" },
-    { key: "butterfly", label: "蝴蝶", symbol: "🦋" },
-    { key: "kitty", label: "Kitty", symbol: "🐱" },
-    { key: "dog", label: "狗狗", symbol: "🐶" }
+    { key: "star", label: "五角星" },
+    { key: "drop", label: "水滴" },
+    { key: "snowflake", label: "雪花" },
+    { key: "circle", label: "圆形" },
+    { key: "text", label: "文本" },
+    { key: "heart", label: "爱心" },
+    { key: "butterfly", label: "花朵" },
+    { key: "kitty", label: "Kitty" }
   ];
 
   return (
@@ -952,10 +952,36 @@ function DotsPanel({
           label: item.label,
           active: item.key === value.shape,
           tone: "linear-gradient(145deg, #ffffff, #e9edf2)",
-          icon: item.symbol,
+          icon: <ShapeSwatchGlyph kind={item.key as ShapeKind} />,
           onClick: () => onChange({ shape: item.key as ShapeKind })
         }))}
       />
+      {value.shape === "text" ? (
+        <>
+          <div className="control-group">
+            <label className="control-label" htmlFor="dot-text-content">
+              文本内容
+            </label>
+            <input
+              id="dot-text-content"
+              type="text"
+              className="control-input"
+              value={value.textContent}
+              maxLength={12}
+              placeholder="输入文本"
+              onChange={(event) => onChange({ textContent: event.target.value })}
+            />
+          </div>
+          <ControlRange
+            label="文字大小"
+            min={10}
+            max={64}
+            step={1}
+            value={value.fontSize}
+            onChange={(next) => onChange({ fontSize: next })}
+          />
+        </>
+      ) : null}
 
       <ControlSelect
         label="点位分布"
@@ -992,7 +1018,7 @@ function DotsPanel({
             </div>
           </div>
           <p className="panel-note">
-            当前是画笔模式。按住并拖拽画板新增波点，“总点数” 作为当前模式下的最大保留数量。
+            当前是画笔模式。按住并拖拽画板新增波点，不再限制手动画点数量。
           </p>
         </>
       )}
@@ -1003,30 +1029,6 @@ function DotsPanel({
         step={1}
         value={value.dotSize}
         onChange={(next) => onChange({ dotSize: next })}
-      />
-      <ControlRange
-        label="大小差异"
-        min={12}
-        max={100}
-        step={1}
-        value={value.sizeVariance}
-        onChange={(next) => onChange({ sizeVariance: next })}
-      />
-      <ControlRange
-        label="总点数"
-        min={12}
-        max={48}
-        step={1}
-        value={value.dotCount}
-        onChange={(next) => onChange({ dotCount: next })}
-      />
-      <ControlRange
-        label="装饰点"
-        min={0}
-        max={32}
-        step={1}
-        value={value.decorativeCount}
-        onChange={(next) => onChange({ decorativeCount: next })}
       />
       <ControlRange
         label="透明度"
@@ -1063,7 +1065,7 @@ function SwatchSection({
     label: string;
     active: boolean;
     tone: string;
-    icon?: string;
+    icon?: ReactNode;
     onClick: () => void;
   }>;
 }) {
@@ -1091,6 +1093,94 @@ function SwatchSection({
       </div>
     </div>
   );
+}
+
+function ShapeSwatchGlyph({ kind }: { kind: ShapeKind }) {
+  if (kind === "star") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <path
+          d="M12 3.5l2.6 5.2 5.8.8-4.2 4.1 1 5.8L12 16.6 6.8 19.4l1-5.8-4.2-4.1 5.8-.8L12 3.5z"
+          className="shape-swatch-fill"
+        />
+      </svg>
+    );
+  }
+
+  if (kind === "drop") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <path
+          d="M12 3.8c3.1 4.2 5.2 7 5.2 10.1a5.2 5.2 0 11-10.4 0c0-3.1 2.1-5.9 5.2-10.1z"
+          className="shape-swatch-fill"
+        />
+      </svg>
+    );
+  }
+
+  if (kind === "snowflake") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <path
+          d="M12 3v18M5 7l14 10M19 7L5 17M7.5 4.6L12 7l4.5-2.4M7.5 19.4L12 17l4.5 2.4"
+          className="shape-swatch-stroke"
+        />
+      </svg>
+    );
+  }
+
+  if (kind === "circle") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <circle cx="12" cy="12" r="6.4" className="shape-swatch-fill" />
+      </svg>
+    );
+  }
+
+  if (kind === "text") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <text x="12" y="15.5" textAnchor="middle" className="shape-swatch-fill" style={{ fontSize: "11px", fontWeight: 700 }}>
+          T
+        </text>
+      </svg>
+    );
+  }
+
+  if (kind === "heart") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <path
+          d={FILLED_SHAPE_GLYPHS.heart}
+          className="shape-swatch-fill"
+        />
+      </svg>
+    );
+  }
+
+  if (kind === "butterfly") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <path
+          d={FILLED_SHAPE_GLYPHS.butterfly}
+          className="shape-swatch-fill"
+        />
+      </svg>
+    );
+  }
+
+  if (kind === "kitty") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <path
+          d={FILLED_SHAPE_GLYPHS.kitty}
+          className="shape-swatch-fill"
+        />
+      </svg>
+    );
+  }
+
+  return null;
 }
 
 function ControlRange({

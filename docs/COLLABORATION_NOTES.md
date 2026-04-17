@@ -36,7 +36,7 @@
 
 - `布局` 只允许切换 `horizontal / vertical`
 - `填充块` 只负责底板样式与可选填充照片替换
-- `波点` 只负责形状、分布、数量、透明度和随机种子相关参数
+- `波点` 只负责形状、分布、大小、透明度、文本和手动画点相关参数
 
 当前裁切交互只绑定在 `primary photo panel` 上。即使存在 `fillPhotoId`，secondary panel 里的照片也还没有独立手势编辑入口。这不是漏实现，而是当前版本的明确边界。
 
@@ -65,11 +65,9 @@
 - `sources`
   - 当前会话中真实加载过的图片资源
 - `screen`
-  - `home` / `editor`
+  - 当前固定为 `editor`
 - `activePanel`
   - 当前右侧正在编辑的面板
-- `exportPreview`
-  - 导出弹层的临时结果
 
 当前没有引入额外状态库，`EditorScreen` 基本是受控视图，尽量不要把核心状态偷偷下沉到子组件。
 
@@ -151,34 +149,26 @@
    - 读取 `project.canvasWidth / canvasHeight`
    - 优先走 Worker：[`src/render/workerClient.ts`](/Users/a77/Desktop/pois/src/render/workerClient.ts)
    - 回退主线程：[`src/render/engine.ts`](/Users/a77/Desktop/pois/src/render/engine.ts)
-   - 结果写入 `exportPreview`
+   - 生成 blob 后直接触发浏览器下载
 
 这里要注意两个现实约束：
 
 - 预览尺寸和导出尺寸不是同一套分辨率
 - “预览看着对，但导出有偏差”时，不要只盯着 CSS，应该直接核对 `resolvePanels(...)` 和渲染输入
 
-### 2.6 Draft 持久化状态流
+### 2.6 会话约束
 
-当前只有参数草稿会写入 `localStorage`，图片资源不会持久化。
+当前版本已经移除浏览器本地草稿缓存：
 
-持久化内容包括：
-
-- theme/layout/base/dots/export format
-- 若字段来自旧版本，会在 `readDraft()` 里进行兼容修正
-
-这意味着：
-
-- 刷新后 UI 参数可能保留
-- 但图片需要重新上传
-- 任何“恢复上次编辑”的需求，都还不是完整能力
+- 刷新后不会恢复上一次的波点与参数
+- 重新上传同一张图片时不会回显旧编辑状态
+- 当前编辑会话是一次性的，关闭或刷新后即结束
 
 ## 3. 协作修改建议
 
 ### 3.1 适合直接改的区域
 
 - 面板文案与控件组织：[`src/components/EditorScreen.tsx`](/Users/a77/Desktop/pois/src/components/EditorScreen.tsx)
-- 首页文案与引导：[`src/components/HomeScreen.tsx`](/Users/a77/Desktop/pois/src/components/HomeScreen.tsx)
 - 默认主题与参数：[`src/presets.ts`](/Users/a77/Desktop/pois/src/presets.ts)
 - 布局与裁切算法：[`src/render/blockLayout.ts`](/Users/a77/Desktop/pois/src/render/blockLayout.ts)、[`src/render/crop.ts`](/Users/a77/Desktop/pois/src/render/crop.ts)
 - 渲染表现：[`src/render/engine.ts`](/Users/a77/Desktop/pois/src/render/engine.ts)、[`src/render/dotModel.ts`](/Users/a77/Desktop/pois/src/render/dotModel.ts)
@@ -187,9 +177,9 @@
 
 - `ProjectState` 字段增删：[`src/types.ts`](/Users/a77/Desktop/pois/src/types.ts)
 - 文件上传流转：[`src/App.tsx`](/Users/a77/Desktop/pois/src/App.tsx)
-- 导出格式与导出入口：[`src/App.tsx`](/Users/a77/Desktop/pois/src/App.tsx)、[`src/components/ExportSheet.tsx`](/Users/a77/Desktop/pois/src/components/ExportSheet.tsx)
+- 导出格式与导出入口：[`src/App.tsx`](/Users/a77/Desktop/pois/src/App.tsx)
 
-原因很直接：这些地方同时影响 UI、渲染、兼容性和草稿恢复，容易出现“看起来只动了一处，实际破坏三条链路”的问题。
+原因很直接：这些地方同时影响 UI、渲染、兼容性和导出体验，容易出现“看起来只动了一处，实际破坏三条链路”的问题。
 
 ## 4. 后续待办
 
@@ -200,6 +190,7 @@
 - 为 `single main photo + optional fill photo` 补最小自动化测试
 - 补一套布局与 crop 的纯函数级测试，覆盖横竖切换和主图替换
 - 校准预览与导出一致性，至少覆盖一张横图和一张竖图
+- 增加导出直接下载的冒烟检查，避免回退到旧弹层流程
 
 ### P1
 
@@ -233,3 +224,13 @@
 - 恢复副图独立编辑体系
 
 那就不再是小修，而是产品模型重新打开，应该先回到方案阶段。
+
+## 6. 部署前检查
+
+上线前最低检查清单：
+
+- `npm test`
+- `npm run build`
+- 手动回归上传主图、替换填充块、单侧波点、双侧波点、文本波点、撤回、清空、PNG 导出
+- 确认刷新后不会恢复旧会话状态
+- 确认导出结果直接下载，不再弹出中间预览层

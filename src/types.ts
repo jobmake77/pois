@@ -9,8 +9,7 @@ export type ShapeKind =
   | "heart"
   | "meteor"
   | "butterfly"
-  | "kitty"
-  | "dog";
+  | "kitty";
 export type BaseStyle = "solid" | "stripes" | "duotone" | "pixel";
 export type Distribution = "random" | "single-side" | "double-side";
 export type BrushMode = "same-size" | "large-to-small" | "small-to-large";

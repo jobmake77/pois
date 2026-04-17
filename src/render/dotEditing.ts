@@ -51,7 +51,6 @@ export function addDotStroke(
   distribution: Distribution,
   target: DotTarget,
   points: DotPoint[],
-  maxCount: number,
   brushMode: BrushMode
 ): DotPlacementState {
   if (distribution === "random" || points.length === 0) {
@@ -77,13 +76,13 @@ export function addDotStroke(
     dotIds: placements.map((item) => item.id)
   };
 
-  return trimDotPlacements({
+  return {
     ...current,
     [bucket]: [...current[bucket], ...placements],
     strokes: [...current.strokes, stroke],
     nextId: current.nextId + placements.length,
     nextStrokeId: current.nextStrokeId + 1
-  }, Math.max(1, Math.floor(maxCount)));
+  };
 }
 
 export function undoLastDotStroke(current: DotPlacementState): DotPlacementState {
@@ -197,30 +196,6 @@ function createDotPlacement(
     rotationSeed: rng(),
     sizeMultiplier: clampSizeMultiplier(sizeMultiplier)
   };
-}
-
-function trimDotPlacements(current: DotPlacementState, maxCount: number): DotPlacementState {
-  const primary = trimDotList(current.primary, maxCount);
-  const secondary = trimDotList(current.secondary, maxCount);
-  const shared = trimDotList(current.shared, maxCount);
-  const retainedIds = new Set([...primary, ...secondary, ...shared].map((dot) => dot.id));
-
-  return {
-    ...current,
-    primary,
-    secondary,
-    shared,
-    strokes: current.strokes
-      .map((stroke) => ({
-        ...stroke,
-        dotIds: stroke.dotIds.filter((dotId) => retainedIds.has(dotId))
-      }))
-      .filter((stroke) => stroke.dotIds.length > 0)
-  };
-}
-
-function trimDotList(dots: DotPlacement[], maxCount: number): DotPlacement[] {
-  return dots.length <= maxCount ? dots : dots.slice(dots.length - maxCount);
 }
 
 function dedupePoints(points: DotPoint[]) {

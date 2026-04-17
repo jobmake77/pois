@@ -27,7 +27,7 @@ Pois Art 是一个移动端优先的照片海报生成 Web 应用。当前版本
 
 - 首页上传主照片后自动进入编辑页
 - 编辑页可以继续上传一张 `填充块照片`
-- 支持高清导出、下载、系统分享和复制分享文案
+- 支持直接导出并下载 `PNG`
 
 ### 2. 画板与交互
 
@@ -62,25 +62,35 @@ Pois Art 是一个移动端优先的照片海报生成 Web 应用。当前版本
   - `水滴`
   - `雪花`
   - `圆形`
+  - `文本`
+  - `爱心`
+  - `花朵`
+  - `Kitty`
 - 点位分布改为：
   - `随机分布`
   - `单侧波点`
   - `双侧波点`
 - 保留可调参数：
   - `点大小`
-  - `大小差异`
-  - `总点数`
-  - `装饰点`
   - `透明度`
   - `大小变化`
-- 水滴和雪花形状路径已重画，视觉上更接近真实目标
+  - 文本模式下的 `文本内容`
+  - 文本模式下的 `文字大小`
+- 新增画笔方式：
+  - `相同形状`
+  - `由大到小`
+  - `由小到大`
+- 新增手动画点管理：
+  - `撤回`
+  - `清空`
+- 爱心、花朵和 Kitty 形状已替换为固定 silhouette 路径
 
 ## 当前限制
 
 - 当前主路径只支持 `一张主照片 + 一张可选填充块照片`
 - 填充块照片暂时没有单独的裁切 UI
-- 还没有撤销 / 重做
-- 还没有系统化自动化测试覆盖
+- 暂时没有 redo
+- 自动化测试目前只覆盖 dot editing 纯函数层
 
 ## 项目结构
 
@@ -90,7 +100,6 @@ src/
   components/
     HomeScreen.tsx            首页
     EditorScreen.tsx          编辑页
-    ExportSheet.tsx           导出结果浮层
   render/
     blockLayout.ts            双 panel 布局求解
     crop.ts                   照片裁切几何与约束
@@ -98,6 +107,7 @@ src/
     engine.ts                 画板渲染主引擎
     random.ts                 随机与数学工具
     shapes.ts                 形状路径生成
+    shapeGlyphs.ts            固定 silhouette 路径
     worker.ts                 导出 Worker
     workerClient.ts           Worker 调用封装
   presets.ts                  默认参数与主题预设
@@ -120,6 +130,22 @@ npm run dev
 npm run build
 npm run preview
 ```
+
+运行测试：
+
+```bash
+npm test
+```
+
+## Deploy Prep
+
+- 确认 Node.js 版本至少为 `18`
+- 执行 `npm ci`
+- 执行 `npm test`
+- 执行 `npm run build`
+- 确认 `dist/` 仅作为构建产物，不提交到 Git
+- 当前导出固定为 `PNG`，无需再配置格式切换
+- 当前没有浏览器本地草稿缓存，刷新后需要重新上传图片，属于预期行为
 
 ## 当前重点
 

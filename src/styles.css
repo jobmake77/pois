@@ -1111,7 +1111,11 @@ img {
 }
 
 .swatch-icon {
-  font-size: 1.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   color: #12263a;
 }
 
@@ -1119,6 +1123,23 @@ img {
   font-size: 0.82rem;
   text-align: center;
   color: var(--ink);
+}
+
+.shape-swatch-svg {
+  width: 24px;
+  height: 24px;
+}
+
+.shape-swatch-fill {
+  fill: currentColor;
+}
+
+.shape-swatch-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .control-card {

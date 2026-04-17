@@ -1,4 +1,5 @@
 import type { ShapeKind } from "../types";
+import { FILLED_SHAPE_GLYPHS } from "./shapeGlyphs";
 
 export function createShapePath(
   shape: ShapeKind,
@@ -39,12 +40,7 @@ export function createShapePath(
   }
 
   if (shape === "heart") {
-    path.moveTo(x, y + half * 0.88);
-    path.bezierCurveTo(x - half * 1.02, y + half * 0.18, x - half * 1.08, y - half * 0.48, x - half * 0.28, y - half * 0.22);
-    path.arc(x - half * 0.28, y - half * 0.22, half * 0.34, Math.PI * 0.92, Math.PI * 0.08, true);
-    path.arc(x + half * 0.28, y - half * 0.22, half * 0.34, Math.PI * 1.08, Math.PI * 0.2, true);
-    path.bezierCurveTo(x + half * 1.08, y - half * 0.48, x + half * 1.02, y + half * 0.18, x, y + half * 0.88);
-    path.closePath();
+    appendGlyphPath(path, FILLED_SHAPE_GLYPHS.heart, x, y, size);
     return path;
   }
 
@@ -62,35 +58,12 @@ export function createShapePath(
   }
 
   if (shape === "butterfly") {
-    path.moveTo(x, y - half * 0.72);
-    path.bezierCurveTo(x - half * 0.96, y - half * 1.08, x - half * 1.02, y - half * 0.04, x - half * 0.2, y - half * 0.04);
-    path.bezierCurveTo(x - half * 1.04, y + half * 0.08, x - half * 0.92, y + half * 1.06, x, y + half * 0.42);
-    path.bezierCurveTo(x + half * 0.92, y + half * 1.06, x + half * 1.04, y + half * 0.08, x + half * 0.2, y - half * 0.04);
-    path.bezierCurveTo(x + half * 1.02, y - half * 0.04, x + half * 0.96, y - half * 1.08, x, y - half * 0.72);
-    path.closePath();
-    path.rect(x - half * 0.08, y - half * 0.68, half * 0.16, size * 1.12);
+    appendGlyphPath(path, FILLED_SHAPE_GLYPHS.butterfly, x, y, size);
     return path;
   }
 
   if (shape === "kitty") {
-    path.moveTo(x - half * 0.74, y - half * 0.12);
-    path.lineTo(x - half * 0.54, y - half * 0.92);
-    path.lineTo(x - half * 0.14, y - half * 0.42);
-    path.arc(x, y + half * 0.02, half * 0.72, Math.PI * 1.22, Math.PI * 1.78);
-    path.lineTo(x + half * 0.54, y - half * 0.92);
-    path.lineTo(x + half * 0.74, y - half * 0.12);
-    path.arc(x, y + half * 0.02, half * 0.74, Math.PI * 1.96, Math.PI * 1.06, true);
-    path.closePath();
-    return path;
-  }
-
-  if (shape === "dog") {
-    path.moveTo(x - half * 0.82, y - half * 0.08);
-    path.bezierCurveTo(x - half * 1.08, y - half * 0.78, x - half * 0.72, y - half * 1.02, x - half * 0.32, y - half * 0.46);
-    path.arc(x, y + half * 0.06, half * 0.68, Math.PI * 1.1, Math.PI * 1.9);
-    path.bezierCurveTo(x + half * 0.72, y - half * 1.02, x + half * 1.08, y - half * 0.78, x + half * 0.82, y - half * 0.08);
-    path.arc(x, y + half * 0.08, half * 0.76, Math.PI * 1.98, Math.PI * 1.02, true);
-    path.closePath();
+    appendGlyphPath(path, FILLED_SHAPE_GLYPHS.kitty, x, y, size);
     return path;
   }
 
@@ -152,4 +125,19 @@ function drawRotatedBranch(
   path.lineTo(points[2].x, points[2].y);
   path.lineTo(points[3].x, points[3].y);
   path.closePath();
+}
+
+function appendGlyphPath(
+  path: Path2D,
+  glyph: string,
+  x: number,
+  y: number,
+  size: number
+) {
+  const sourcePath = new Path2D(glyph);
+  const scale = size / 24;
+  const transform = new DOMMatrix()
+    .translateSelf(x - size / 2, y - size / 2)
+    .scaleSelf(scale, scale);
+  path.addPath(sourcePath, transform);
 }

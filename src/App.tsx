@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorScreen } from "./components/EditorScreen";
-import { ExportSheet } from "./components/ExportSheet";
 import {
   defaultBase,
   defaultDots,
@@ -21,11 +20,6 @@ import { renderPanelToCanvas, renderToBlobOnMain } from "./render/engine";
 import { canUseWorkerExport, exportWithWorker } from "./render/workerClient";
 import type {
   CanvasPreset,
-  DotPlacementState,
-  BrushMode,
-  ExportPreview,
-  LayoutMode,
-  PanelDirection,
   PanelKey,
   PhotoCrop,
   ProjectState,
@@ -35,48 +29,31 @@ import type {
 } from "./types";
 
 const DRAFT_KEY = "pois-art:last-project";
-interface SavedDraft {
-  themeId?: string;
-  layoutMode?: LayoutMode;
-  panelDirection?: PanelDirection;
-  layoutDirection?: PanelDirection;
-  primaryShare?: number;
-  pairedDotsMode?: ProjectState["pairedDotsMode"];
-  fillBlockEnabled?: boolean;
-  fillBlockDotsEnabled?: boolean;
-  layout?: ProjectState["layout"];
-  base?: ProjectState["base"];
-  dots?: ProjectState["dots"];
-  dotPlacements?: DotPlacementState;
-  exportFormat?: ProjectState["exportFormat"];
-}
 
 type FilePickerMode = "replace-main" | "replace-fill";
 
-function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectState {
+function createInitialProject(theme: ThemePreset): ProjectState {
   const suggested = getSuggestedEditorState(0);
-  const canvasPreset =
-    draft?.layout?.canvasPreset ?? theme.layout.canvasPreset ?? defaultLayout.canvasPreset;
+  const canvasPreset = theme.layout.canvasPreset ?? defaultLayout.canvasPreset;
   const canvas = getCanvasDimensions(canvasPreset);
 
   return {
     id: `project-${Date.now()}`,
-    themeId: draft?.themeId ?? theme.id,
+    themeId: theme.id,
     photoIds: [],
     fillPhotoId: undefined,
     activePhotoId: "",
     photoCrops: {},
-    dotPlacements: normalizeDotPlacements(draft?.dotPlacements),
-    layoutMode: draft?.layoutMode ?? suggested.layoutMode,
-    panelDirection: draft?.panelDirection ?? draft?.layoutDirection ?? suggested.panelDirection,
-    primaryShare: draft?.primaryShare ?? suggested.primaryShare,
-    pairedDotsMode: draft?.pairedDotsMode ?? "auto",
-    fillBlockEnabled: draft?.fillBlockEnabled ?? suggested.fillBlockEnabled,
-    fillBlockDotsEnabled: draft?.fillBlockDotsEnabled ?? true,
+    dotPlacements: normalizeDotPlacements(undefined),
+    layoutMode: suggested.layoutMode,
+    panelDirection: suggested.panelDirection,
+    primaryShare: suggested.primaryShare,
+    pairedDotsMode: "auto",
+    fillBlockEnabled: suggested.fillBlockEnabled,
+    fillBlockDotsEnabled: true,
     layout: {
       ...defaultLayout,
       ...theme.layout,
-      ...draft?.layout,
       canvasPreset
     },
     base: {
@@ -84,20 +61,16 @@ function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectSt
       primaryColor: theme.palette.primary,
       secondaryColor: theme.palette.secondary,
       backgroundTone: theme.palette.surface,
-      ...theme.base,
-      ...draft?.base
+      ...theme.base
     },
     dots: {
       ...defaultDots,
       ...theme.dots,
-      ...draft?.dots,
       shape:
-        draft?.dots?.shape === "square" || draft?.dots?.shape === "text"
+        theme.dots.shape === "square" || theme.dots.shape === "text"
           ? "circle"
-          : theme.dots.shape === "square" || theme.dots.shape === "text"
-            ? "circle"
-            : draft?.dots?.shape ?? theme.dots.shape ?? defaultDots.shape,
-      brushMode: draft?.dots?.brushMode ?? defaultDots.brushMode
+          : theme.dots.shape ?? defaultDots.shape,
+      brushMode: defaultDots.brushMode
     },
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
@@ -106,10 +79,9 @@ function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectSt
 }
 
 export default function App() {
-  const initialDraft = readDraft();
-  const initialTheme = getThemeById(initialDraft?.themeId ?? themePresets[0].id);
+  const initialTheme = getThemeById(themePresets[0].id);
   const [project, setProject] = useState<ProjectState>(() =>
-    createInitialProject(initialTheme, initialDraft)
+    createInitialProject(initialTheme)
   );
   const [screen] = useState<Screen>("editor");
   const [sources, setSources] = useState<SourceAsset[]>([]);
@@ -117,7 +89,6 @@ export default function App() {
   const [previewStatus, setPreviewStatus] = useState("等待图片上传");
   const [renderTime, setRenderTime] = useState<number | null>(null);
   const [exportPending, setExportPending] = useState(false);
-  const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [renderTick, setRenderTick] = useState(0);
   const [previewShellSize, setPreviewShellSize] = useState({ width: 0, height: 0 });
 
@@ -127,15 +98,6 @@ export default function App() {
   const secondaryPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
   const filePickerModeRef = useRef<FilePickerMode>("replace-main");
   const sourcesRef = useRef<SourceAsset[]>([]);
-  const exportRef = useRef<ExportPreview | null>(null);
-
-  const clearExportPreview = () => {
-    if (exportRef.current) {
-      URL.revokeObjectURL(exportRef.current.url);
-      exportRef.current = null;
-    }
-    setExportPreview(null);
-  };
 
   const theme = useMemo(() => getThemeById(project.themeId), [project.themeId]);
   const activeSources = useMemo(
@@ -160,19 +122,16 @@ export default function App() {
   }, [sources]);
 
   useEffect(() => {
-    exportRef.current = exportPreview;
-  }, [exportPreview]);
-
-  useEffect(() => {
-    persistDraft(project);
-  }, [project]);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // ignore local storage failures
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
       sourcesRef.current.forEach((source) => URL.revokeObjectURL(source.objectUrl));
-      if (exportRef.current) {
-        URL.revokeObjectURL(exportRef.current.url);
-      }
     };
   }, []);
 
@@ -309,7 +268,6 @@ export default function App() {
         URL.revokeObjectURL(source.objectUrl);
       }
     });
-    clearExportPreview();
 
     const nextSources = [asset, preservedFillSource].filter(Boolean) as SourceAsset[];
     sourcesRef.current = nextSources;
@@ -353,33 +311,6 @@ export default function App() {
     }, 100);
   };
 
-  const handleRandomize = () => {
-    const shapes: Array<typeof defaultDots.shape> = [
-      "star",
-      "drop",
-      "snowflake",
-      "circle",
-      "heart",
-      "meteor",
-      "butterfly",
-      "kitty",
-      "dog"
-    ];
-    const baseStyles: Array<typeof defaultBase.style> = ["solid", "stripes", "pixel"];
-    setProject((current) => ({
-      ...current,
-      base: {
-        ...current.base,
-        style: baseStyles[Math.floor(Math.random() * baseStyles.length)]
-      },
-      dots: {
-        ...current.dots,
-        seed: current.dots.seed + 17,
-        shape: shapes[Math.floor(Math.random() * shapes.length)]
-      }
-    }));
-  };
-
   const handleExport = async () => {
     if (activeSources.length === 0) {
       return;
@@ -387,7 +318,6 @@ export default function App() {
 
     setExportPending(true);
     setPreviewStatus("正在生成海报...");
-    clearExportPreview();
 
     try {
       const renderInput = {
@@ -402,13 +332,8 @@ export default function App() {
       const result = canUseWorkerExport()
         ? await exportWithWorker(renderInput)
         : await renderToBlobOnMain(renderInput, mimeType);
-      const url = URL.createObjectURL(result.blob);
-      setExportPreview({
-        blob: result.blob,
-        url,
-        durationMs: result.durationMs
-      });
-      setPreviewStatus("海报已生成");
+      downloadBlob(result.blob, `pois-art-${Date.now()}.png`);
+      setPreviewStatus("PNG 已下载");
     } catch (error) {
       console.error(error);
       setPreviewStatus("海报生成失败");
@@ -457,7 +382,6 @@ export default function App() {
         current.dots.distribution,
         panelRole,
         points,
-        current.dots.dotCount,
         current.dots.brushMode
       )
     }));
@@ -482,62 +406,6 @@ export default function App() {
       dotPlacements: clearDotPlacements(current.dotPlacements)
     }));
     setPreviewStatus("已清空手动画点");
-  };
-
-  const handleDownload = () => {
-    if (!exportPreview) {
-      return;
-    }
-    const link = document.createElement("a");
-    link.href = exportPreview.url;
-    link.download = `pois-art-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleShare = async () => {
-    if (!exportPreview) {
-      return;
-    }
-
-    try {
-      const file = new File([exportPreview.blob], "pois-art.png", {
-        type: "image/png"
-      });
-
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          title: "Pois Art 海报",
-          text: "用 Pois Art 做了一张分块波点海报。",
-          files: [file]
-        });
-        return;
-      }
-
-      handleDownload();
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
-      console.error(error);
-      setPreviewStatus("系统分享失败，请改用下载");
-    }
-  };
-
-  const handleCopy = async () => {
-    if (!navigator.clipboard?.writeText) {
-      setPreviewStatus("当前浏览器不支持复制到剪贴板");
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText("用 Pois Art 做了一张分块波点海报。");
-      setPreviewStatus("分享文案已复制");
-    } catch (error) {
-      console.error(error);
-      setPreviewStatus("复制失败，请手动复制文案");
-    }
   };
 
   return (
@@ -630,17 +498,8 @@ export default function App() {
             }
           }))
         }
-        onRandomize={handleRandomize}
         onExport={() => void handleExport()}
         onBack={() => openPicker("replace-main")}
-      />
-
-      <ExportSheet
-        preview={exportPreview}
-        onClose={clearExportPreview}
-        onDownload={handleDownload}
-        onShare={() => void handleShare()}
-        onCopy={() => void handleCopy()}
       />
     </div>
   );
@@ -700,6 +559,17 @@ async function extractDominantColor(image: HTMLImageElement) {
   return `rgb(${Math.round(red / count)}, ${Math.round(green / count)}, ${Math.round(blue / count)})`;
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function getCanvasDimensions(preset: CanvasPreset) {
   if (preset === "square") {
     return { width: 1200, height: 1200 };
@@ -754,69 +624,4 @@ function normalizePhotoCrops(
   });
 
   return nextPhotoCrops;
-}
-
-function readDraft(): SavedDraft | undefined {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) {
-      return undefined;
-    }
-    const parsed = JSON.parse(raw) as SavedDraft;
-    if (parsed.layout && typeof parsed.layout.gap === "number") {
-      parsed.layout.gap = 0;
-    }
-    if (parsed.layout && typeof parsed.layout.padding === "number") {
-      parsed.layout.padding = 0;
-    }
-    if (parsed.base?.style === "duotone") {
-      parsed.base.style = "stripes";
-    }
-    if (
-      parsed.dots &&
-      parsed.dots.distribution !== "random" &&
-      parsed.dots.distribution !== "single-side" &&
-      parsed.dots.distribution !== "double-side"
-    ) {
-      parsed.dots.distribution = "random";
-    }
-    if (
-      parsed.dots &&
-      parsed.dots.brushMode !== "same-size" &&
-      parsed.dots.brushMode !== "large-to-small" &&
-      parsed.dots.brushMode !== "small-to-large"
-    ) {
-      parsed.dots.brushMode = "same-size" as BrushMode;
-    }
-    if (parsed.dots && (parsed.dots.shape === "square" || parsed.dots.shape === "text")) {
-      parsed.dots.shape = "circle";
-    }
-    parsed.dotPlacements = normalizeDotPlacements(parsed.dotPlacements);
-    parsed.exportFormat = "png";
-    return parsed;
-  } catch {
-    return undefined;
-  }
-}
-
-function persistDraft(project: ProjectState) {
-  try {
-    const draft: SavedDraft = {
-      themeId: project.themeId,
-      layoutMode: project.layoutMode,
-      panelDirection: project.panelDirection,
-      primaryShare: project.primaryShare,
-      pairedDotsMode: project.pairedDotsMode,
-      fillBlockEnabled: project.fillBlockEnabled,
-      fillBlockDotsEnabled: project.fillBlockDotsEnabled,
-      layout: project.layout,
-      base: project.base,
-      dots: project.dots,
-      dotPlacements: project.dotPlacements,
-      exportFormat: project.exportFormat
-    };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    // ignore local storage failures
-  }
 }
