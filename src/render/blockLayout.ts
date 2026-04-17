@@ -1,8 +1,4 @@
-import type {
-  LayoutDirection,
-  LayoutMode,
-  ProjectState
-} from "../types";
+import type { PanelDirection, ProjectState, SourceAsset } from "../types";
 
 export interface Rect {
   x: number;
@@ -11,325 +7,234 @@ export interface Rect {
   height: number;
 }
 
-export interface CanvasRegion {
-  id: string;
+export interface CanvasPanel {
+  id: "primary" | "secondary";
+  role: "primary" | "secondary";
   kind: "photo" | "fill";
   rect: Rect;
   photoId?: string;
 }
 
-export function resolveCanvasRegions(
+export function resolvePanels(
   project: ProjectState,
   width: number,
-  height: number
-): CanvasRegion[] {
+  height: number,
+  sources: SourceAsset[] = []
+): CanvasPanel[] {
   const photoIds = project.photoIds.slice(0, 2);
-  const effectiveDirection = getEffectiveDirection(project, width, photoIds.length);
-  const effectivePadding = width < 520 ? Math.min(project.layout.padding, 4) : project.layout.padding;
-  const effectiveGap = width < 520 ? Math.min(project.layout.gap, 3) : project.layout.gap;
-  const effectiveFillRatio = getEffectiveFillRatio(
-    project.layout.fillRatio,
-    effectiveDirection,
-    width,
-    photoIds.length,
-    project.fillBlockEnabled
-  );
-  const contentRect: Rect = {
-    x: effectivePadding,
-    y: effectivePadding,
-    width: Math.max(1, width - effectivePadding * 2),
-    height: Math.max(1, height - effectivePadding * 2)
-  };
-
   if (photoIds.length === 0) {
     return [];
   }
 
-  const layoutMode = photoIds.length >= 2 ? "double" : "single";
-  if (layoutMode === "single") {
-    return resolveSingleRegions(
-      photoIds[0],
-      contentRect,
-      effectiveDirection,
-      project.fillBlockEnabled,
-      effectiveFillRatio,
-      effectiveGap
-    );
+  const padding = width < 520 ? Math.min(project.layout.padding, 4) : project.layout.padding;
+  const gap = width < 520 ? Math.min(project.layout.gap, 3) : project.layout.gap;
+  const contentRect: Rect = {
+    x: padding,
+    y: padding,
+    width: Math.max(1, width - padding * 2),
+    height: Math.max(1, height - padding * 2)
+  };
+
+  if (photoIds.length === 1) {
+    const source = sources.find((item) => item.id === photoIds[0]);
+    if (source) {
+      return resolveSinglePhotoPanels(
+        contentRect,
+        project.panelDirection,
+        gap,
+        source,
+        photoIds[0],
+        project.fillPhotoId
+      );
+    }
   }
 
-  return resolveDoubleRegions(
-    photoIds,
+  const secondaryKind = photoIds.length >= 2 ? "photo" : "fill";
+  const secondaryPhotoId = photoIds.length >= 2 ? photoIds[1] : undefined;
+  const primaryRect = getPrimaryRect(
     contentRect,
-    effectiveDirection,
-    project.fillBlockEnabled,
-    effectiveFillRatio,
-    effectiveGap
+    project.panelDirection,
+    project.primaryShare,
+    gap
   );
+  const secondaryRect = getSecondaryRect(contentRect, primaryRect, project.panelDirection, gap);
+
+  return [
+    {
+      id: "primary" as const,
+      role: "primary" as const,
+      kind: "photo" as const,
+      rect: primaryRect,
+      photoId: photoIds[0]
+    },
+    {
+      id: "secondary" as const,
+      role: "secondary" as const,
+      kind: secondaryKind as "photo" | "fill",
+      rect: secondaryRect,
+      photoId: secondaryPhotoId
+    }
+  ].filter((panel) => panel.rect.width > 0 && panel.rect.height > 0);
+}
+
+function resolveSinglePhotoPanels(
+  contentRect: Rect,
+  direction: PanelDirection,
+  gap: number,
+  source: Pick<SourceAsset, "width" | "height">,
+  photoId: string,
+  fillPhotoId?: string
+): CanvasPanel[] {
+  const aspectRatio = Math.max(0.05, source.width / Math.max(1, source.height));
+
+  if (direction === "vertical") {
+    const fullWidthHeight = contentRect.width / aspectRatio;
+    const panelHeight =
+      fullWidthHeight * 2 + gap <= contentRect.height
+        ? fullWidthHeight
+        : Math.max(1, (contentRect.height - gap) / 2);
+    const panelWidth = Math.max(1, panelHeight * aspectRatio);
+    const startX = contentRect.x + (contentRect.width - panelWidth) / 2;
+    const startY = contentRect.y + (contentRect.height - (panelHeight * 2 + gap)) / 2;
+
+    return [
+      {
+        id: "primary",
+        role: "primary",
+        kind: "photo",
+        rect: {
+          x: Math.round(startX),
+          y: Math.round(startY),
+          width: Math.round(panelWidth),
+          height: Math.round(panelHeight)
+        },
+        photoId
+      },
+      {
+        id: "secondary",
+        role: "secondary",
+        kind: fillPhotoId ? "photo" : "fill",
+        rect: {
+          x: Math.round(startX),
+          y: Math.round(startY + panelHeight + gap),
+          width: Math.round(panelWidth),
+          height: Math.round(panelHeight)
+        },
+        photoId: fillPhotoId
+      }
+    ];
+  }
+
+  const fullHeightWidth = contentRect.height * aspectRatio;
+  const panelWidth =
+    fullHeightWidth * 2 + gap <= contentRect.width
+      ? fullHeightWidth
+      : Math.max(1, (contentRect.width - gap) / 2);
+  const panelHeight = Math.max(1, panelWidth / aspectRatio);
+  const startX = contentRect.x + (contentRect.width - (panelWidth * 2 + gap)) / 2;
+  const startY = contentRect.y + (contentRect.height - panelHeight) / 2;
+
+  return [
+    {
+      id: "primary",
+      role: "primary",
+      kind: "photo",
+      rect: {
+        x: Math.round(startX),
+        y: Math.round(startY),
+        width: Math.round(panelWidth),
+        height: Math.round(panelHeight)
+      },
+      photoId
+    },
+    {
+      id: "secondary",
+      role: "secondary",
+      kind: fillPhotoId ? "photo" : "fill",
+      rect: {
+        x: Math.round(startX + panelWidth + gap),
+        y: Math.round(startY),
+        width: Math.round(panelWidth),
+        height: Math.round(panelHeight)
+      },
+      photoId: fillPhotoId
+    }
+  ];
 }
 
 export function getSuggestedEditorState(photoCount: number) {
   if (photoCount <= 1) {
     return {
-      layoutMode: "single" as LayoutMode,
-      fillBlockEnabled: true,
-      layoutDirection: "horizontal" as LayoutDirection
+      layoutMode: "single" as const,
+      panelDirection: "horizontal" as const,
+      primaryShare: 0.5,
+      fillBlockEnabled: true
     };
   }
 
   return {
-    layoutMode: "double" as LayoutMode,
-    fillBlockEnabled: false,
-    layoutDirection: "horizontal" as LayoutDirection
+    layoutMode: "double" as const,
+    panelDirection: "horizontal" as const,
+    primaryShare: 0.5,
+    fillBlockEnabled: false
   };
 }
 
 export function getDefaultLayoutMetrics() {
   return {
-    padding: 6,
+    padding: 0,
     gap: 0,
-    fillRatio: 0.2
+    primaryShare: 0.5
   };
 }
 
-function getEffectiveDirection(project: ProjectState, width: number, photoCount: number) {
-  if (!project.fillBlockEnabled) {
-    return project.layoutDirection;
-  }
-  if (width >= 680) {
-    return project.layoutDirection;
-  }
-  if (photoCount === 1) {
-    return "vertical" as const;
-  }
-  if (photoCount >= 2 && project.layoutDirection === "horizontal") {
-    return "vertical" as const;
-  }
-  return project.layoutDirection;
-}
-
-function getEffectiveFillRatio(
-  fillRatio: number,
-  direction: LayoutDirection,
-  width: number,
-  photoCount: number,
-  fillEnabled: boolean
-) {
-  if (!fillEnabled) {
-    return fillRatio;
-  }
-  if (width >= 680) {
-    return fillRatio;
-  }
-  if (photoCount === 1 && direction === "vertical") {
-    return Math.max(fillRatio, 0.26);
-  }
-  if (photoCount >= 2 && direction === "vertical") {
-    return Math.max(fillRatio, 0.22);
-  }
-  return fillRatio;
-}
-
-function resolveSingleRegions(
-  photoId: string,
-  rect: Rect,
-  direction: LayoutDirection,
-  fillEnabled: boolean,
-  fillRatio: number,
+function getPrimaryRect(
+  contentRect: Rect,
+  direction: PanelDirection,
+  share: number,
   gap: number
 ) {
-  if (!fillEnabled) {
-    return [
-      {
-        id: `photo-${photoId}`,
-        kind: "photo" as const,
-        rect,
-        photoId
-      }
-    ];
-  }
-
+  const safeShare = Math.min(0.86, Math.max(0.14, share));
   if (direction === "vertical") {
-    const fillHeight = Math.round(rect.height * fillRatio);
-    const photoHeight = Math.max(1, rect.height - fillHeight - gap);
-    const fillY = rect.y + photoHeight + gap;
-    return [
-      {
-        id: `photo-${photoId}`,
-        kind: "photo" as const,
-        rect: {
-          x: rect.x,
-          y: rect.y,
-          width: rect.width,
-          height: photoHeight
-        },
-        photoId
-      },
-      {
-        id: "fill-block",
-        kind: "fill" as const,
-        rect: {
-          x: rect.x,
-          y: fillY,
-          width: rect.width,
-          height: Math.max(1, rect.y + rect.height - fillY)
-        }
-      }
-    ];
+    const height = Math.max(1, Math.round((contentRect.height - gap) * safeShare));
+    return {
+      x: contentRect.x,
+      y: contentRect.y,
+      width: contentRect.width,
+      height
+    };
   }
 
-  const fillWidth = Math.round(rect.width * fillRatio);
-  const photoWidth = Math.max(1, rect.width - fillWidth - gap);
-  const fillX = rect.x + photoWidth + gap;
-  return [
-    {
-      id: `photo-${photoId}`,
-      kind: "photo" as const,
-      rect: {
-        x: rect.x,
-        y: rect.y,
-        width: photoWidth,
-        height: rect.height
-      },
-      photoId
-    },
-    {
-      id: "fill-block",
-      kind: "fill" as const,
-      rect: {
-        x: fillX,
-        y: rect.y,
-        width: Math.max(1, rect.x + rect.width - fillX),
-        height: rect.height
-      }
-    }
-  ];
+  const width = Math.max(1, Math.round((contentRect.width - gap) * safeShare));
+  return {
+    x: contentRect.x,
+    y: contentRect.y,
+    width,
+    height: contentRect.height
+  };
 }
 
-function resolveDoubleRegions(
-  photoIds: string[],
-  rect: Rect,
-  direction: LayoutDirection,
-  fillEnabled: boolean,
-  fillRatio: number,
+function getSecondaryRect(
+  contentRect: Rect,
+  primaryRect: Rect,
+  direction: PanelDirection,
   gap: number
-) {
-  if (!fillEnabled) {
-    if (direction === "vertical") {
-      const topHeight = Math.max(1, Math.round((rect.height - gap) / 2));
-      const bottomY = rect.y + topHeight + gap;
-      return [
-        {
-          id: `photo-${photoIds[0]}`,
-          kind: "photo" as const,
-          rect: { x: rect.x, y: rect.y, width: rect.width, height: topHeight },
-          photoId: photoIds[0]
-        },
-        {
-          id: `photo-${photoIds[1]}`,
-          kind: "photo" as const,
-          rect: {
-            x: rect.x,
-            y: bottomY,
-            width: rect.width,
-            height: Math.max(1, rect.y + rect.height - bottomY)
-          },
-          photoId: photoIds[1]
-        }
-      ];
-    }
-
-    const leftWidth = Math.max(1, Math.round((rect.width - gap) / 2));
-    const rightX = rect.x + leftWidth + gap;
-    return [
-      {
-        id: `photo-${photoIds[0]}`,
-        kind: "photo" as const,
-        rect: { x: rect.x, y: rect.y, width: leftWidth, height: rect.height },
-        photoId: photoIds[0]
-      },
-      {
-        id: `photo-${photoIds[1]}`,
-        kind: "photo" as const,
-        rect: {
-          x: rightX,
-          y: rect.y,
-          width: Math.max(1, rect.x + rect.width - rightX),
-          height: rect.height
-        },
-        photoId: photoIds[1]
-      }
-    ];
-  }
-
+): Rect {
   if (direction === "vertical") {
-    const fillHeight = Math.round(rect.height * fillRatio);
-    const photoBandHeight = Math.max(1, rect.height - fillHeight - gap);
-    const fillY = rect.y + photoBandHeight + gap;
-    const leftWidth = Math.max(1, Math.round((rect.width - gap) / 2));
-    const rightX = rect.x + leftWidth + gap;
-    return [
-      {
-        id: `photo-${photoIds[0]}`,
-        kind: "photo" as const,
-        rect: { x: rect.x, y: rect.y, width: leftWidth, height: photoBandHeight },
-        photoId: photoIds[0]
-      },
-      {
-        id: `photo-${photoIds[1]}`,
-        kind: "photo" as const,
-        rect: {
-          x: rightX,
-          y: rect.y,
-          width: Math.max(1, rect.x + rect.width - rightX),
-          height: photoBandHeight
-        },
-        photoId: photoIds[1]
-      },
-      {
-        id: "fill-block",
-        kind: "fill" as const,
-        rect: {
-          x: rect.x,
-          y: fillY,
-          width: rect.width,
-          height: Math.max(1, rect.y + rect.height - fillY)
-        }
-      }
-    ];
+    const y = primaryRect.y + primaryRect.height + gap;
+    return {
+      x: contentRect.x,
+      y,
+      width: contentRect.width,
+      height: Math.max(0, contentRect.y + contentRect.height - y)
+    };
   }
 
-  const fillWidth = Math.round(rect.width * fillRatio);
-  const photoBandWidth = Math.max(1, rect.width - fillWidth - gap);
-  const fillX = rect.x + photoBandWidth + gap;
-  const topHeight = Math.max(1, Math.round((rect.height - gap) / 2));
-  const bottomY = rect.y + topHeight + gap;
-  return [
-    {
-      id: `photo-${photoIds[0]}`,
-      kind: "photo" as const,
-      rect: { x: rect.x, y: rect.y, width: photoBandWidth, height: topHeight },
-      photoId: photoIds[0]
-    },
-    {
-      id: `photo-${photoIds[1]}`,
-      kind: "photo" as const,
-      rect: {
-        x: rect.x,
-        y: bottomY,
-        width: photoBandWidth,
-        height: Math.max(1, rect.y + rect.height - bottomY)
-      },
-      photoId: photoIds[1]
-    },
-    {
-      id: "fill-block",
-      kind: "fill" as const,
-      rect: {
-        x: fillX,
-        y: rect.y,
-        width: Math.max(1, rect.x + rect.width - fillX),
-        height: rect.height
-      }
-    }
-  ];
+  const x = primaryRect.x + primaryRect.width + gap;
+  return {
+    x,
+    y: contentRect.y,
+    width: Math.max(0, contentRect.x + contentRect.width - x),
+    height: contentRect.height
+  };
 }

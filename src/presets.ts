@@ -6,9 +6,8 @@ import type {
 } from "./types";
 
 export const defaultLayout: LayoutSettings = {
-  padding: 6,
+  padding: 0,
   gap: 0,
-  fillRatio: 0.2,
   canvasPreset: "poster"
 };
 
@@ -21,17 +20,15 @@ export const defaultBase: BaseSettings = {
 };
 
 export const defaultDots: DotSettings = {
-  shape: "star",
-  dotSize: 34,
-  sizeVariance: 64,
-  dotCount: 28,
-  decorativeCount: 20,
+  shape: "circle",
+  dotSize: 32,
+  sizeVariance: 40,
+  dotCount: 22,
+  decorativeCount: 0,
   distribution: "random",
-  primaryBlockShare: 0.58,
-  photoBlockDistribution: "random",
-  fillBlockDistribution: "random",
+  brushMode: "same-size",
   fillMode: "image-cutout",
-  opacity: 0.94,
+  opacity: 0.98,
   seed: 7,
   textContent: "POIS",
   fontSize: 20,
@@ -49,7 +46,7 @@ export const themePresets: ThemePreset[] = [
       accent: "#7ca5dd",
       surface: "#ede7dc"
     },
-    layout: { fillRatio: 0.2 },
+    layout: {},
     base: {
       style: "stripes",
       primaryColor: "#2b6f89",
@@ -57,10 +54,10 @@ export const themePresets: ThemePreset[] = [
       stripeThickness: 38
     },
     dots: {
-      shape: "star",
-      dotSize: 34,
-      dotCount: 28,
-      decorativeCount: 22,
+      shape: "circle",
+      dotSize: 32,
+      dotCount: 22,
+      decorativeCount: 0,
       fillMode: "image-cutout"
     }
   },
@@ -74,7 +71,7 @@ export const themePresets: ThemePreset[] = [
       accent: "#74c8e4",
       surface: "#f4efe3"
     },
-    layout: { fillRatio: 0.19 },
+    layout: {},
     base: {
       style: "stripes",
       primaryColor: "#d4edf4",
@@ -86,8 +83,7 @@ export const themePresets: ThemePreset[] = [
       dotSize: 36,
       dotCount: 26,
       decorativeCount: 20,
-      fillMode: "image-cutout",
-      primaryBlockShare: 0.6
+      fillMode: "image-cutout"
     }
   },
   {
@@ -150,7 +146,7 @@ export const themePresets: ThemePreset[] = [
       accent: "#7f345e",
       surface: "#f2dfd5"
     },
-    layout: { fillRatio: 0.19 },
+    layout: {},
     base: {
       style: "duotone",
       primaryColor: "#3a0222",

@@ -2,20 +2,16 @@ import type { ExportPreview } from "../types";
 
 interface ExportSheetProps {
   preview: ExportPreview | null;
-  format: "png" | "jpeg";
   onClose: () => void;
   onDownload: () => void;
-  onDownloadOriginal: () => void;
   onShare: () => void;
   onCopy: () => void;
 }
 
 export function ExportSheet({
   preview,
-  format,
   onClose,
   onDownload,
-  onDownloadOriginal,
   onShare,
   onCopy
 }: ExportSheetProps) {
@@ -46,10 +42,7 @@ export function ExportSheet({
             复制分享文案
           </button>
           <button className="secondary-button" onClick={onDownload}>
-            下载 {format.toUpperCase()}
-          </button>
-          <button className="primary-button" onClick={onDownloadOriginal}>
-            原图下载
+            下载 PNG
           </button>
           <button className="primary-button" onClick={onShare}>
             系统分享

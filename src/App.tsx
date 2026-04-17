@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { HomeScreen } from "./components/HomeScreen";
 import { EditorScreen } from "./components/EditorScreen";
 import { ExportSheet } from "./components/ExportSheet";
 import {
@@ -9,15 +8,24 @@ import {
   getThemeById,
   themePresets
 } from "./presets";
-import { resolveCanvasRegions, getSuggestedEditorState } from "./render/blockLayout";
+import { resolvePanels, getSuggestedEditorState } from "./render/blockLayout";
 import { clampPhotoCrop, createDefaultPhotoCrop } from "./render/crop";
-import { renderToBlobOnMain, renderToCanvas } from "./render/engine";
+import {
+  addDotStroke,
+  clearDotPlacements,
+  getManualDotCount,
+  normalizeDotPlacements,
+  undoLastDotStroke
+} from "./render/dotEditing";
+import { renderPanelToCanvas, renderToBlobOnMain } from "./render/engine";
 import { canUseWorkerExport, exportWithWorker } from "./render/workerClient";
 import type {
   CanvasPreset,
+  DotPlacementState,
+  BrushMode,
   ExportPreview,
-  LayoutDirection,
   LayoutMode,
+  PanelDirection,
   PanelKey,
   PhotoCrop,
   ProjectState,
@@ -27,21 +35,23 @@ import type {
 } from "./types";
 
 const DRAFT_KEY = "pois-art:last-project";
-const MAX_PHOTOS = 2;
-
 interface SavedDraft {
   themeId?: string;
   layoutMode?: LayoutMode;
-  layoutDirection?: LayoutDirection;
+  panelDirection?: PanelDirection;
+  layoutDirection?: PanelDirection;
+  primaryShare?: number;
+  pairedDotsMode?: ProjectState["pairedDotsMode"];
   fillBlockEnabled?: boolean;
   fillBlockDotsEnabled?: boolean;
   layout?: ProjectState["layout"];
   base?: ProjectState["base"];
   dots?: ProjectState["dots"];
+  dotPlacements?: DotPlacementState;
   exportFormat?: ProjectState["exportFormat"];
 }
 
-type FilePickerMode = "replace" | "append";
+type FilePickerMode = "replace-main" | "replace-fill";
 
 function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectState {
   const suggested = getSuggestedEditorState(0);
@@ -53,10 +63,14 @@ function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectSt
     id: `project-${Date.now()}`,
     themeId: draft?.themeId ?? theme.id,
     photoIds: [],
+    fillPhotoId: undefined,
     activePhotoId: "",
     photoCrops: {},
+    dotPlacements: normalizeDotPlacements(draft?.dotPlacements),
     layoutMode: draft?.layoutMode ?? suggested.layoutMode,
-    layoutDirection: draft?.layoutDirection ?? suggested.layoutDirection,
+    panelDirection: draft?.panelDirection ?? draft?.layoutDirection ?? suggested.panelDirection,
+    primaryShare: draft?.primaryShare ?? suggested.primaryShare,
+    pairedDotsMode: draft?.pairedDotsMode ?? "auto",
     fillBlockEnabled: draft?.fillBlockEnabled ?? suggested.fillBlockEnabled,
     fillBlockDotsEnabled: draft?.fillBlockDotsEnabled ?? true,
     layout: {
@@ -77,11 +91,17 @@ function createInitialProject(theme: ThemePreset, draft?: SavedDraft): ProjectSt
       ...defaultDots,
       ...theme.dots,
       ...draft?.dots,
-      fillMode: "image-cutout" as const
+      shape:
+        draft?.dots?.shape === "square" || draft?.dots?.shape === "text"
+          ? "circle"
+          : theme.dots.shape === "square" || theme.dots.shape === "text"
+            ? "circle"
+            : draft?.dots?.shape ?? theme.dots.shape ?? defaultDots.shape,
+      brushMode: draft?.dots?.brushMode ?? defaultDots.brushMode
     },
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
-    exportFormat: draft?.exportFormat ?? "png"
+    exportFormat: "png"
   };
 }
 
@@ -91,7 +111,7 @@ export default function App() {
   const [project, setProject] = useState<ProjectState>(() =>
     createInitialProject(initialTheme, initialDraft)
   );
-  const [screen, setScreen] = useState<Screen>("editor");
+  const [screen] = useState<Screen>("editor");
   const [sources, setSources] = useState<SourceAsset[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>("layout");
   const [previewStatus, setPreviewStatus] = useState("等待图片上传");
@@ -99,21 +119,40 @@ export default function App() {
   const [exportPending, setExportPending] = useState(false);
   const [exportPreview, setExportPreview] = useState<ExportPreview | null>(null);
   const [renderTick, setRenderTick] = useState(0);
-  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const [previewShellSize, setPreviewShellSize] = useState({ width: 0, height: 0 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const filePickerModeRef = useRef<FilePickerMode>("replace");
+  const previewShellRef = useRef<HTMLDivElement>(null);
+  const primaryPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const secondaryPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const filePickerModeRef = useRef<FilePickerMode>("replace-main");
   const sourcesRef = useRef<SourceAsset[]>([]);
   const exportRef = useRef<ExportPreview | null>(null);
 
+  const clearExportPreview = () => {
+    if (exportRef.current) {
+      URL.revokeObjectURL(exportRef.current.url);
+      exportRef.current = null;
+    }
+    setExportPreview(null);
+  };
+
   const theme = useMemo(() => getThemeById(project.themeId), [project.themeId]);
   const activeSources = useMemo(
-    () =>
-      project.photoIds
+    () => {
+      const orderedIds = [...project.photoIds, project.fillPhotoId].filter(Boolean) as string[];
+      const uniqueIds = Array.from(new Set(orderedIds));
+      return uniqueIds
         .map((id) => sources.find((source) => source.id === id))
-        .filter(Boolean) as SourceAsset[],
-    [project.photoIds, sources]
+        .filter(Boolean) as SourceAsset[];
+    },
+    [project.photoIds, project.fillPhotoId, sources]
+  );
+  const previewLayoutWidth = previewShellSize.width > 0 ? previewShellSize.width : project.canvasWidth;
+  const previewLayoutHeight = previewShellSize.height > 0 ? previewShellSize.height : project.canvasHeight;
+  const previewPanels = useMemo(
+    () => resolvePanels(project, previewLayoutWidth, previewLayoutHeight, activeSources),
+    [project, previewLayoutWidth, previewLayoutHeight, activeSources]
   );
 
   useEffect(() => {
@@ -142,16 +181,15 @@ export default function App() {
       return;
     }
 
-    const canvas = previewCanvasRef.current;
-    const shell = canvas?.parentElement;
-    if (!canvas || !shell) {
+    const shell = previewShellRef.current;
+    if (!shell) {
       return;
     }
 
     const updateSize = () => {
       const width = Math.max(1, Math.round(shell.clientWidth));
       const height = Math.max(1, Math.round(shell.clientHeight));
-      setPreviewSize((current) =>
+      setPreviewShellSize((current) =>
         current.width === width && current.height === height ? current : { width, height }
       );
     };
@@ -165,15 +203,12 @@ export default function App() {
       observer.disconnect();
       window.removeEventListener("resize", updateSize);
     };
-  }, [screen, project.canvasWidth, project.canvasHeight]);
+  }, [screen, project.canvasWidth, project.canvasHeight, activeSources.length]);
 
   useEffect(() => {
     if (
       screen !== "editor" ||
-      activeSources.length === 0 ||
-      !previewCanvasRef.current ||
-      previewSize.width <= 0 ||
-      previewSize.height <= 0
+      activeSources.length === 0
     ) {
       return;
     }
@@ -182,14 +217,25 @@ export default function App() {
       const startedAt = performance.now();
       setPreviewStatus("生成预览中...");
       try {
-        await renderToCanvas(previewCanvasRef.current!, {
-          project,
-          theme,
-          sources: activeSources,
-          width: previewSize.width,
-          height: previewSize.height,
-          pixelRatio: Math.min(window.devicePixelRatio || 1, 2)
+        if (previewPanels.length === 0) {
+          return;
+        }
+        const renderJobs = previewPanels.map((panel) => {
+          const target =
+            panel.role === "primary" ? primaryPreviewCanvasRef.current : secondaryPreviewCanvasRef.current;
+          if (!target) {
+            return Promise.resolve();
+          }
+          return renderPanelToCanvas(target, {
+            project,
+            theme,
+            sources: activeSources,
+            width: panel.rect.width,
+            height: panel.rect.height,
+            pixelRatio: Math.min(window.devicePixelRatio || 1, 2)
+          }, panel.role, previewPanels);
         });
+        await Promise.all(renderJobs);
         setPreviewStatus("预览已更新");
         setRenderTime(performance.now() - startedAt);
       } catch (error) {
@@ -199,139 +245,127 @@ export default function App() {
     }, 50);
 
     return () => window.clearTimeout(handle);
-  }, [screen, activeSources, previewSize, project, renderTick, theme]);
+  }, [screen, activeSources, previewShellSize, project, renderTick, theme]);
 
   const openPicker = (mode: FilePickerMode) => {
     filePickerModeRef.current = mode;
     fileInputRef.current?.click();
   };
 
-  const syncProjectWithSources = (
-    current: ProjectState,
-    nextPhotoIds: string[],
-    nextPhotoCrops: Record<string, PhotoCrop>,
-    preferredActiveId?: string
-  ): ProjectState => {
-    if (nextPhotoIds.length === 0) {
-      const suggested = getSuggestedEditorState(0);
-      return {
-        ...current,
-        photoIds: [],
-        activePhotoId: "",
-        photoCrops: {},
-        layoutMode: suggested.layoutMode,
-        layoutDirection: suggested.layoutDirection,
-        fillBlockEnabled: suggested.fillBlockEnabled
-      };
-    }
-
-    const suggested = getSuggestedEditorState(nextPhotoIds.length);
-    const activePhotoId =
-      preferredActiveId && nextPhotoIds.includes(preferredActiveId)
-        ? preferredActiveId
-        : nextPhotoIds[0];
-
-    return {
-      ...current,
-      photoIds: nextPhotoIds,
-      activePhotoId,
-      photoCrops: nextPhotoCrops,
-      layoutMode: suggested.layoutMode,
-      layoutDirection: suggested.layoutDirection,
-      fillBlockEnabled: suggested.fillBlockEnabled
-    };
-  };
-
   const handleFiles = async (files: FileList | File[]) => {
-    const loadedAssets = await Promise.all(Array.from(files).map(loadSourceAsset));
-    if (loadedAssets.length === 0) {
+    const [firstFile] = Array.from(files);
+    if (!firstFile) {
       return;
     }
 
-    const replaceExisting = filePickerModeRef.current === "replace";
-    const existingSources = replaceExisting ? [] : sourcesRef.current;
-    const allowedCount = Math.max(0, MAX_PHOTOS - existingSources.length);
-    const acceptedAssets = loadedAssets.slice(0, allowedCount);
+    let asset: SourceAsset;
+    try {
+      asset = await loadSourceAsset(firstFile);
+    } catch (error) {
+      console.error(error);
+      setPreviewStatus("图片加载失败，请换一张图试试");
+      return;
+    }
 
-    if (replaceExisting) {
-      sourcesRef.current.forEach((source) => URL.revokeObjectURL(source.objectUrl));
-      if (exportPreview) {
-        URL.revokeObjectURL(exportPreview.url);
-        setExportPreview(null);
+    if (filePickerModeRef.current === "replace-fill") {
+      const currentMainId = project.photoIds[0];
+      const mainSource = currentMainId
+        ? sourcesRef.current.find((source) => source.id === currentMainId)
+        : undefined;
+      if (!mainSource) {
+        URL.revokeObjectURL(asset.objectUrl);
+        setPreviewStatus("请先上传主照片");
+        return;
       }
-    }
 
-    if (acceptedAssets.length === 0) {
-      setPreviewStatus(`最多添加 ${MAX_PHOTOS} 张图片`);
+      const previousFillSource = project.fillPhotoId
+        ? sourcesRef.current.find((source) => source.id === project.fillPhotoId)
+        : undefined;
+      if (previousFillSource) {
+        URL.revokeObjectURL(previousFillSource.objectUrl);
+      }
+
+      const nextSources = [mainSource, asset];
+      sourcesRef.current = nextSources;
+      setSources(nextSources);
+      setProject((current) => ({
+        ...current,
+        fillPhotoId: asset.id
+      }));
+      setActivePanel("fill");
+      setPreviewStatus("填充块照片已更新");
+      setRenderTick((current) => current + 1);
       return;
     }
 
-    const nextSources = [...existingSources, ...acceptedAssets];
+    const previousMainId = project.photoIds[0];
+    const previousFillId = project.fillPhotoId;
+    const preservedFillSource = previousFillId
+      ? sourcesRef.current.find((source) => source.id === previousFillId)
+      : undefined;
+
+    sourcesRef.current.forEach((source) => {
+      if (source.id !== previousFillId) {
+        URL.revokeObjectURL(source.objectUrl);
+      }
+    });
+    clearExportPreview();
+
+    const nextSources = [asset, preservedFillSource].filter(Boolean) as SourceAsset[];
     sourcesRef.current = nextSources;
     setSources(nextSources);
     setProject((current) => {
-      const baseIds = replaceExisting ? [] : current.photoIds;
-      const nextPhotoIds = [...baseIds, ...acceptedAssets.map((asset) => asset.id)];
-      const nextPhotoCrops: Record<string, PhotoCrop> = replaceExisting ? {} : { ...current.photoCrops };
-      acceptedAssets.forEach((asset) => {
-        nextPhotoCrops[asset.id] = { x: 0, y: 0, scale: 1 };
-      });
-      const nextProject = syncProjectWithSources(current, nextPhotoIds, nextPhotoCrops, nextPhotoIds[0]);
+      const nextPhotoCrops: Record<string, PhotoCrop> = {};
+      if (preservedFillSource && current.photoCrops[preservedFillSource.id]) {
+        nextPhotoCrops[preservedFillSource.id] = current.photoCrops[preservedFillSource.id];
+      }
+      nextPhotoCrops[asset.id] = { x: 0, y: 0, scale: 1, fitMode: "contain" };
+
+      const nextProject: ProjectState = {
+        ...current,
+        photoIds: [asset.id],
+        fillPhotoId: preservedFillSource?.id,
+        activePhotoId: asset.id,
+        photoCrops: nextPhotoCrops,
+        layoutMode: "single",
+        panelDirection: current.panelDirection,
+        primaryShare: current.primaryShare,
+        fillBlockEnabled: true
+      };
+
       return {
         ...nextProject,
-        photoCrops: normalizePhotoCrops(
-          nextProject,
-          nextSources,
-          nextPhotoCrops,
-          new Set(acceptedAssets.map((asset) => asset.id))
-        )
+        photoCrops: normalizePhotoCrops(nextProject, nextSources, nextPhotoCrops, new Set([asset.id]))
       };
     });
     setActivePanel("layout");
-    setScreen("editor");
-    setPreviewStatus(
-      acceptedAssets.length < loadedAssets.length
-        ? `已添加 ${acceptedAssets.length} 张，当前最多 ${MAX_PHOTOS} 张`
-        : "已接收素材，准备生成..."
-    );
+    setPreviewStatus(previousMainId ? "主照片已更新" : "已接收素材，准备生成...");
     setRenderTick((current) => current + 1);
-    
-    // 强制更新预览尺寸，确保渲染能够正常进行
+
+    // Keep preview shell dimensions fresh after the file picker closes.
     setTimeout(() => {
-      const canvas = previewCanvasRef.current;
-      const shell = canvas?.parentElement;
-      if (canvas && shell) {
+      const shell = previewShellRef.current;
+      if (shell) {
         const width = Math.max(1, Math.round(shell.clientWidth));
         const height = Math.max(1, Math.round(shell.clientHeight));
-        setPreviewSize({ width, height });
+        setPreviewShellSize({ width, height });
       }
     }, 100);
   };
 
-  const handleThemeChange = (themeId: string) => {
-    const nextTheme = getThemeById(themeId);
-    setProject((current) => ({
-      ...current,
-      themeId,
-      base: {
-        ...current.base,
-        primaryColor: nextTheme.palette.primary,
-        secondaryColor: nextTheme.palette.secondary,
-        backgroundTone: nextTheme.palette.surface,
-        ...nextTheme.base
-      },
-      dots: {
-        ...current.dots,
-        ...nextTheme.dots,
-        fillMode: "image-cutout" as const
-      }
-    }));
-    setRenderTick((current) => current + 1);
-  };
-
   const handleRandomize = () => {
-    const shapes: Array<typeof defaultDots.shape> = ["star", "drop", "snowflake", "circle", "square", "text"];
-    const baseStyles: Array<typeof defaultBase.style> = ["solid", "stripes", "duotone", "pixel"];
+    const shapes: Array<typeof defaultDots.shape> = [
+      "star",
+      "drop",
+      "snowflake",
+      "circle",
+      "heart",
+      "meteor",
+      "butterfly",
+      "kitty",
+      "dog"
+    ];
+    const baseStyles: Array<typeof defaultBase.style> = ["solid", "stripes", "pixel"];
     setProject((current) => ({
       ...current,
       base: {
@@ -353,10 +387,7 @@ export default function App() {
 
     setExportPending(true);
     setPreviewStatus("正在生成海报...");
-    if (exportPreview) {
-      URL.revokeObjectURL(exportPreview.url);
-      setExportPreview(null);
-    }
+    clearExportPreview();
 
     try {
       const renderInput = {
@@ -365,10 +396,9 @@ export default function App() {
         sources: activeSources,
         width: project.canvasWidth,
         height: project.canvasHeight,
-        pixelRatio: 1,
-        exportQuality: 0.96
+        pixelRatio: 1
       };
-      const mimeType = project.exportFormat === "jpeg" ? "image/jpeg" : "image/png";
+      const mimeType = "image/png";
       const result = canUseWorkerExport()
         ? await exportWithWorker(renderInput)
         : await renderToBlobOnMain(renderInput, mimeType);
@@ -387,57 +417,13 @@ export default function App() {
     }
   };
 
-  const handleOriginalExport = async () => {
-    if (activeSources.length === 0) {
-      return;
-    }
-    setExportPending(true);
-    setPreviewStatus("正在生成原图...");
-    try {
-      const regions = resolveCanvasRegions(project, project.canvasWidth, project.canvasHeight);
-      const photoRegions = regions.filter((r) => r.kind === "photo");
-      const maxSourceWidth = Math.max(...activeSources.map((s) => s.width));
-      const maxPhotoRegionWidth = Math.max(...photoRegions.map((r) => r.rect.width), 1);
-      const ratio = Math.min(4, Math.max(2, maxSourceWidth / maxPhotoRegionWidth));
-      const renderWidth = Math.floor(project.canvasWidth * ratio);
-      const renderHeight = Math.floor(project.canvasHeight * ratio);
-
-      const renderInput = {
-        project,
-        theme,
-        sources: activeSources,
-        width: renderWidth,
-        height: renderHeight,
-        pixelRatio: 1,
-        exportQuality: 0.98
-      };
-      const mimeType = project.exportFormat === "jpeg" ? "image/jpeg" : "image/png";
-      const result = canUseWorkerExport()
-        ? await exportWithWorker(renderInput)
-        : await renderToBlobOnMain(renderInput, mimeType);
-      const url = URL.createObjectURL(result.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `pois-art-original-${Date.now()}.${project.exportFormat}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setPreviewStatus("原图下载已开始");
-    } catch (error) {
-      console.error(error);
-      setPreviewStatus("原图生成失败");
-    } finally {
-      setExportPending(false);
-    }
-  };
-
   const updatePhotoCrop = (photoId: string, nextCrop: PhotoCrop) => {
     setProject((current) => {
       const source = sourcesRef.current.find((item) => item.id === photoId);
       if (!source) {
         return current;
       }
-      const region = resolveCanvasRegions(current, current.canvasWidth, current.canvasHeight).find(
+      const region = resolvePanels(current, current.canvasWidth, current.canvasHeight, sourcesRef.current).find(
         (item) => item.kind === "photo" && item.photoId === photoId
       );
       if (!region) {
@@ -459,13 +445,52 @@ export default function App() {
     });
   };
 
+  const handleCommitDotStroke = (
+    panelRole: "primary" | "secondary",
+    points: Array<{ xRatio: number; yRatio: number }>
+  ) => {
+    const distribution = project.dots.distribution;
+    setProject((current) => ({
+      ...current,
+      dotPlacements: addDotStroke(
+        current.dotPlacements,
+        current.dots.distribution,
+        panelRole,
+        points,
+        current.dots.dotCount,
+        current.dots.brushMode
+      )
+    }));
+    setPreviewStatus(
+      distribution === "double-side"
+        ? "已新增同步波点笔划"
+        : "已新增当前面板波点笔划"
+    );
+  };
+
+  const handleUndoDotStroke = () => {
+    setProject((current) => ({
+      ...current,
+      dotPlacements: undoLastDotStroke(current.dotPlacements)
+    }));
+    setPreviewStatus("已撤回上一笔波点");
+  };
+
+  const handleClearDotStroke = () => {
+    setProject((current) => ({
+      ...current,
+      dotPlacements: clearDotPlacements(current.dotPlacements)
+    }));
+    setPreviewStatus("已清空手动画点");
+  };
+
   const handleDownload = () => {
     if (!exportPreview) {
       return;
     }
     const link = document.createElement("a");
     link.href = exportPreview.url;
-    link.download = `pois-art-${Date.now()}.${project.exportFormat}`;
+    link.download = `pois-art-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -476,27 +501,43 @@ export default function App() {
       return;
     }
 
-    const extension = project.exportFormat === "jpeg" ? "jpg" : "png";
-    const mimeType = project.exportFormat === "jpeg" ? "image/jpeg" : "image/png";
-    const file = new File([exportPreview.blob], `pois-art.${extension}`, {
-      type: mimeType
-    });
-
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({
-        title: "Pois Art 海报",
-        text: "用 Pois Art 做了一张分块波点海报。",
-        files: [file]
+    try {
+      const file = new File([exportPreview.blob], "pois-art.png", {
+        type: "image/png"
       });
-      return;
-    }
 
-    handleDownload();
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: "Pois Art 海报",
+          text: "用 Pois Art 做了一张分块波点海报。",
+          files: [file]
+        });
+        return;
+      }
+
+      handleDownload();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      console.error(error);
+      setPreviewStatus("系统分享失败，请改用下载");
+    }
   };
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText("用 Pois Art 做了一张分块波点海报。");
-    setPreviewStatus("分享文案已复制");
+    if (!navigator.clipboard?.writeText) {
+      setPreviewStatus("当前浏览器不支持复制到剪贴板");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText("用 Pois Art 做了一张分块波点海报。");
+      setPreviewStatus("分享文案已复制");
+    } catch (error) {
+      console.error(error);
+      setPreviewStatus("复制失败，请手动复制文案");
+    }
   };
 
   return (
@@ -505,7 +546,6 @@ export default function App() {
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        multiple
         hidden
         onChange={(event) => {
           const files = event.target.files;
@@ -516,176 +556,89 @@ export default function App() {
         }}
       />
 
-      {screen === "home" ? (
-        <HomeScreen onOpenFiles={() => openPicker("replace")} />
-      ) : (
-        <EditorScreen
-          project={project}
-          theme={theme}
-          themes={themePresets}
-          sources={activeSources}
-          previewStatus={previewStatus}
-          renderTime={renderTime}
-          exportPending={exportPending}
-          activePanel={activePanel}
-          previewRef={previewCanvasRef}
-          onActivePanelChange={setActivePanel}
-          onThemeChange={handleThemeChange}
-          onSelectSource={(sourceId) =>
-            setProject((current) => ({
+      <EditorScreen
+        project={project}
+        sources={activeSources}
+        previewStatus={previewStatus}
+        renderTime={renderTime}
+        exportPending={exportPending}
+        activePanel={activePanel}
+        previewShellRef={previewShellRef}
+        primaryPreviewRef={primaryPreviewCanvasRef}
+        secondaryPreviewRef={secondaryPreviewCanvasRef}
+        previewPanels={previewPanels}
+        onActivePanelChange={setActivePanel}
+        onOpenFillPhoto={() => openPicker("replace-fill")}
+        onSetPhotoCrop={updatePhotoCrop}
+        onCommitDotStroke={handleCommitDotStroke}
+        onUndoDotStroke={handleUndoDotStroke}
+        onClearDotStroke={handleClearDotStroke}
+        manualDotCount={getManualDotCount(project.dotPlacements)}
+        canUndoDotStroke={project.dotPlacements.strokes.length > 0}
+        onSetPanelDirection={(panelDirection) =>
+          setProject((current) => {
+            const nextProject = {
               ...current,
-              activePhotoId: sourceId
-            }))
-          }
-          onDeleteSource={(sourceId) => {
-            const target = sourcesRef.current.find((source) => source.id === sourceId);
-            if (target) {
-              URL.revokeObjectURL(target.objectUrl);
+              panelDirection
+            };
+            return {
+              ...nextProject,
+              photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
+            };
+          })
+        }
+        onResetTheme={() => {
+          const resetTheme = getThemeById(project.themeId);
+          setProject((current) => ({
+            ...current,
+            base: {
+              ...defaultBase,
+              primaryColor: resetTheme.palette.primary,
+              secondaryColor: resetTheme.palette.secondary,
+              backgroundTone: resetTheme.palette.surface,
+              ...resetTheme.base,
+              style: resetTheme.base.style === "duotone" ? "stripes" : resetTheme.base.style ?? defaultBase.style
+            },
+            dots: {
+              ...defaultDots,
+              ...resetTheme.dots,
+              shape:
+                resetTheme.dots.shape === "square" || resetTheme.dots.shape === "text"
+                  ? "circle"
+                  : resetTheme.dots.shape ?? defaultDots.shape,
+              fillMode: current.dots.fillMode,
+              distribution: current.dots.distribution,
+              brushMode: current.dots.brushMode
             }
-            const nextSources = sourcesRef.current.filter((source) => source.id !== sourceId);
-            sourcesRef.current = nextSources;
-            setSources(nextSources);
-            setProject((current) => {
-              const nextPhotoIds = current.photoIds.filter((id) => id !== sourceId);
-              const nextPhotoCrops = { ...current.photoCrops };
-              delete nextPhotoCrops[sourceId];
-              const nextProject = syncProjectWithSources(
-                current,
-                nextPhotoIds,
-                nextPhotoCrops,
-                current.activePhotoId
-              );
-              return {
-                ...nextProject,
-                photoCrops: normalizePhotoCrops(nextProject, nextSources, nextPhotoCrops)
-              };
-            });
-            if (nextSources.length === 0) {
-              setPreviewStatus("等待图片上传");
+          }));
+        }}
+        onUpdateBase={(patch) =>
+          setProject((current) => ({
+            ...current,
+            base: {
+              ...current.base,
+              ...patch
             }
-          }}
-          onOpenMoreFiles={() => openPicker("append")}
-          onSetPhotoCrop={updatePhotoCrop}
-          onUpdateLayout={(patch) =>
-            setProject((current) => {
-              const nextLayout = {
-                ...current.layout,
-                ...patch
-              };
-              const canvas = patch.canvasPreset
-                ? getCanvasDimensions(patch.canvasPreset)
-                : { width: current.canvasWidth, height: current.canvasHeight };
-              const nextProject = {
-                ...current,
-                layout: nextLayout,
-                canvasWidth: canvas.width,
-                canvasHeight: canvas.height
-              };
-              return {
-                ...nextProject,
-                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
-              };
-            })
-          }
-          onSetLayoutMode={(layoutMode) =>
-            setProject((current) => {
-              const nextProject = {
-                ...current,
-                layoutMode
-              };
-              return {
-                ...nextProject,
-                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
-              };
-            })
-          }
-          onSetLayoutDirection={(layoutDirection) =>
-            setProject((current) => {
-              const nextProject = {
-                ...current,
-                layoutDirection
-              };
-              return {
-                ...nextProject,
-                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
-              };
-            })
-          }
-          onSetFillBlockEnabled={(fillBlockEnabled) =>
-            setProject((current) => {
-              const nextProject = {
-                ...current,
-                fillBlockEnabled
-              };
-              return {
-                ...nextProject,
-                photoCrops: normalizePhotoCrops(nextProject, sourcesRef.current, current.photoCrops)
-              };
-            })
-          }
-          onSetFillBlockDotsEnabled={(fillBlockDotsEnabled) =>
-            setProject((current) => ({
-              ...current,
-              fillBlockDotsEnabled
-            }))
-          }
-          onResetTheme={() => {
-            const resetTheme = getThemeById(project.themeId);
-            setProject((current) => ({
-              ...current,
-              base: {
-                ...defaultBase,
-                primaryColor: resetTheme.palette.primary,
-                secondaryColor: resetTheme.palette.secondary,
-                backgroundTone: resetTheme.palette.surface,
-                ...resetTheme.base
-              },
-              dots: {
-                ...defaultDots,
-                ...resetTheme.dots
-              }
-            }));
-          }}
-          onUpdateBase={(patch) =>
-            setProject((current) => ({
-              ...current,
-              base: {
-                ...current.base,
-                ...patch
-              }
-            }))
-          }
-          onUpdateDots={(patch) =>
-            setProject((current) => ({
-              ...current,
-              dots: {
-                ...current.dots,
-                ...patch,
-                fillMode: "image-cutout" as const
-              }
-            }))
-          }
-          onUpdateExportFormat={(format) =>
-            setProject((current) => ({
-              ...current,
-              exportFormat: format
-            }))
-          }
-          onRandomize={handleRandomize}
-          onExport={() => void handleExport()}
-          onBack={() => {
-            // 不返回首页，保持在编辑页面
-            setPreviewStatus("等待图片上传");
-          }}
-        />
-      )}
+          }))
+        }
+        onUpdateDots={(patch) =>
+          setProject((current) => ({
+            ...current,
+            dots: {
+              ...current.dots,
+              ...patch
+            }
+          }))
+        }
+        onRandomize={handleRandomize}
+        onExport={() => void handleExport()}
+        onBack={() => openPicker("replace-main")}
+      />
 
       <ExportSheet
         preview={exportPreview}
-        format={project.exportFormat}
-        onClose={() => setExportPreview(null)}
+        onClose={clearExportPreview}
         onDownload={handleDownload}
-        onDownloadOriginal={() => void handleOriginalExport()}
         onShare={() => void handleShare()}
         onCopy={() => void handleCopy()}
       />
@@ -695,19 +648,24 @@ export default function App() {
 
 async function loadSourceAsset(file: File): Promise<SourceAsset> {
   const objectUrl = URL.createObjectURL(file);
-  const image = await loadImage(objectUrl);
-  const dominantColor = await extractDominantColor(image);
-  return {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    name: file.name,
-    file,
-    objectUrl,
-    width: image.naturalWidth,
-    height: image.naturalHeight,
-    aspectRatio: image.naturalWidth / image.naturalHeight,
-    image,
-    dominantColor
-  };
+  try {
+    const image = await loadImage(objectUrl);
+    const dominantColor = await extractDominantColor(image);
+    return {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: file.name,
+      file,
+      objectUrl,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      aspectRatio: image.naturalWidth / image.naturalHeight,
+      image,
+      dominantColor
+    };
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw error;
+  }
 }
 
 function loadImage(src: string) {
@@ -763,7 +721,7 @@ function normalizePhotoCrops(
 ) {
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const regionMap = new Map(
-    resolveCanvasRegions(project, project.canvasWidth, project.canvasHeight)
+    resolvePanels(project, project.canvasWidth, project.canvasHeight, sources)
       .filter((region) => region.kind === "photo" && region.photoId)
       .map((region) => [region.photoId!, region])
   );
@@ -808,9 +766,33 @@ function readDraft(): SavedDraft | undefined {
     if (parsed.layout && typeof parsed.layout.gap === "number") {
       parsed.layout.gap = 0;
     }
-    if (parsed.dots) {
-      parsed.dots.fillMode = "image-cutout";
+    if (parsed.layout && typeof parsed.layout.padding === "number") {
+      parsed.layout.padding = 0;
     }
+    if (parsed.base?.style === "duotone") {
+      parsed.base.style = "stripes";
+    }
+    if (
+      parsed.dots &&
+      parsed.dots.distribution !== "random" &&
+      parsed.dots.distribution !== "single-side" &&
+      parsed.dots.distribution !== "double-side"
+    ) {
+      parsed.dots.distribution = "random";
+    }
+    if (
+      parsed.dots &&
+      parsed.dots.brushMode !== "same-size" &&
+      parsed.dots.brushMode !== "large-to-small" &&
+      parsed.dots.brushMode !== "small-to-large"
+    ) {
+      parsed.dots.brushMode = "same-size" as BrushMode;
+    }
+    if (parsed.dots && (parsed.dots.shape === "square" || parsed.dots.shape === "text")) {
+      parsed.dots.shape = "circle";
+    }
+    parsed.dotPlacements = normalizeDotPlacements(parsed.dotPlacements);
+    parsed.exportFormat = "png";
     return parsed;
   } catch {
     return undefined;
@@ -822,12 +804,15 @@ function persistDraft(project: ProjectState) {
     const draft: SavedDraft = {
       themeId: project.themeId,
       layoutMode: project.layoutMode,
-      layoutDirection: project.layoutDirection,
+      panelDirection: project.panelDirection,
+      primaryShare: project.primaryShare,
+      pairedDotsMode: project.pairedDotsMode,
       fillBlockEnabled: project.fillBlockEnabled,
       fillBlockDotsEnabled: project.fillBlockDotsEnabled,
       layout: project.layout,
       base: project.base,
       dots: project.dots,
+      dotPlacements: project.dotPlacements,
       exportFormat: project.exportFormat
     };
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
