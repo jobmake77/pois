@@ -412,6 +412,13 @@ img {
   color: var(--ink);
 }
 
+.reference-brand-mark {
+  display: block;
+  width: auto;
+  height: 42px;
+  user-select: none;
+}
+
 .inline-select {
   display: inline-flex;
   align-items: center;

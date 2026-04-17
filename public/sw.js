@@ -1,5 +1,5 @@
-const CACHE_NAME = "pois-art-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
+const CACHE_NAME = "pois-art-v2";
+const APP_SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/pois-logo.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

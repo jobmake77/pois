@@ -1,11 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="120" fill="#102a43"/>
-  <rect x="72" y="84" width="368" height="136" rx="24" fill="#f2efe5"/>
-  <rect x="72" y="236" width="368" height="40" fill="#2b6f89"/>
-  <rect x="72" y="292" width="368" height="24" fill="#f2efe5"/>
-  <rect x="72" y="332" width="368" height="20" fill="#2b6f89"/>
-  <rect x="72" y="368" width="368" height="24" fill="#f2efe5"/>
-  <path d="M154 124l14 28 30 4-22 20 6 30-28-15-28 15 6-30-22-20 30-4z" fill="#2b6f89"/>
-  <circle cx="352" cy="166" r="26" fill="#d6eff7"/>
-  <path d="M308 330c0-18 18-34 18-54 0-10-8-18-18-18s-18 8-18 18c0 20 18 36 18 54z" fill="#f2efe5"/>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="20" y1="20" x2="236" y2="236" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF4DD"/>
+      <stop offset="1" stop-color="#FAEBCD"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="50" y1="42" x2="199" y2="209" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F15A3B"/>
+      <stop offset="1" stop-color="#EA4335"/>
+    </linearGradient>
+    <linearGradient id="heart" x1="95" y1="93" x2="157" y2="161" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1993DC"/>
+      <stop offset="1" stop-color="#1578C9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="10" y="10" width="236" height="236" rx="56" fill="url(#bg)"/>
+  <circle cx="128" cy="118" r="79" fill="url(#ring)"/>
+  <circle cx="128" cy="118" r="42" fill="#FFF3D7"/>
+  <path d="M116 95C123 88 135 88 142 97C149 88 162 88 169 97C177 107 176 121 166 131L145 150C141 154 135 154 131 150L110 131C100 121 99 107 107 97C110 93 113 92 116 95Z" fill="url(#heart)"/>
+  <path d="M135 150C139 154 138 160 133 164H121C117 160 117 154 121 150H135Z" fill="#1578C9"/>
+  <path d="M90 55C110 58 123 70 133 86" stroke="#FFF4D9" stroke-width="11" stroke-linecap="round"/>
+  <circle cx="148" cy="107" r="6" fill="#FFF4D9"/>
+  <path d="M114 198C120 192 136 192 142 198C138 211 118 212 114 198Z" fill="#EA4335"/>
 </svg>

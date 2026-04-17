@@ -638,7 +638,12 @@ export function EditorScreen({
     <main className="screen editor-screen editor-reference-screen">
       <header className="editor-header editor-reference-toolbar">
         <div className="editor-header-left">
-          <div className="reference-brand">POI</div>
+          <img
+            src="/pois-logo.svg"
+            alt="POiS"
+            className="reference-brand-mark"
+            draggable="false"
+          />
         </div>
 
         <div className="editor-header-actions">
