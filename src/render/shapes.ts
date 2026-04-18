@@ -44,19 +44,6 @@ export function createShapePath(
     return path;
   }
 
-  if (shape === "meteor") {
-    path.moveTo(x - half * 1.08, y + half * 0.22);
-    path.lineTo(x - half * 0.2, y + half * 0.06);
-    path.lineTo(x + half * 0.18, y + half * 0.44);
-    path.lineTo(x + half * 0.94, y - half * 0.38);
-    path.lineTo(x + half * 0.22, y - half * 0.16);
-    path.lineTo(x - half * 0.08, y - half * 0.62);
-    path.lineTo(x - half * 0.26, y - half * 0.12);
-    path.lineTo(x - half * 1.08, y + half * 0.22);
-    path.closePath();
-    return path;
-  }
-
   if (shape === "butterfly") {
     appendGlyphPath(path, FILLED_SHAPE_GLYPHS.butterfly, x, y, size);
     return path;

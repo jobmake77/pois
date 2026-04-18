@@ -404,14 +404,6 @@ img {
   margin: 0;
 }
 
-.reference-brand {
-  font-size: 1.6rem;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  color: var(--ink);
-}
-
 .reference-brand-mark {
   display: block;
   width: auto;

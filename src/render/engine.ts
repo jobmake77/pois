@@ -31,10 +31,13 @@ export async function renderToCanvas(canvas: HTMLCanvasElement, input: RenderInp
   if (!context) {
     throw new Error("Canvas 2D context is unavailable.");
   }
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, targetWidth, targetHeight);
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   await drawPoster(context, {
     ...input,
-    width: targetWidth,
-    height: targetHeight,
+    width,
+    height,
     pixelRatio: 1
   });
 }
@@ -73,14 +76,16 @@ export async function renderPanelToCanvas(
     rect: {
       x: 0,
       y: 0,
-      width: targetWidth,
-      height: targetHeight
+      width,
+      height
     }
   };
 
   context.save();
+  context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, targetWidth, targetHeight);
-  context.drawImage(panelSurface.canvas as CanvasImageSource, 0, 0, targetWidth, targetHeight);
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.drawImage(panelSurface.canvas as CanvasImageSource, 0, 0, width, height);
   drawPanelDots(context, input, localPanel, dotModel, surfaceMap);
   context.restore();
 }

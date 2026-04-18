@@ -7,7 +7,6 @@ export type ShapeKind =
   | "square"
   | "text"
   | "heart"
-  | "meteor"
   | "butterfly"
   | "kitty";
 export type BaseStyle = "solid" | "stripes" | "duotone" | "pixel";
