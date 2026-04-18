@@ -147,8 +147,8 @@ test("normalizeDotPlacements repairs invalid values and strips malformed records
   assert.equal(placements.nextStrokeId, 1);
   assert.equal(placements.primary.length, 1);
   assert.equal(placements.primary[0].id, "manual-1");
-  assert.equal(placements.primary[0].xRatio, 0.02);
-  assert.equal(placements.primary[0].yRatio, 0.98);
+  assert.equal(placements.primary[0].xRatio, 0);
+  assert.equal(placements.primary[0].yRatio, 1);
   assert.equal(placements.primary[0].profileSample, 1);
   assert.equal(placements.primary[0].varianceSample, 0);
   assert.equal(placements.primary[0].sizeMultiplier, 1.35);

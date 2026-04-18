@@ -229,7 +229,7 @@ function getSizeMultiplier(index: number, total: number, brushMode: BrushMode) {
 }
 
 function clampRatio(value: number) {
-  return Math.min(0.98, Math.max(0.02, value));
+  return Math.min(1, Math.max(0, value));
 }
 
 function clampUnit(value: number) {

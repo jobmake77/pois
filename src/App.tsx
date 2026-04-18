@@ -111,9 +111,20 @@ export default function App() {
   );
   const previewLayoutWidth = previewShellSize.width > 0 ? previewShellSize.width : project.canvasWidth;
   const previewLayoutHeight = previewShellSize.height > 0 ? previewShellSize.height : project.canvasHeight;
+  const posterPanels = useMemo(
+    () => resolvePanels(project, project.canvasWidth, project.canvasHeight, activeSources),
+    [project, activeSources]
+  );
   const previewPanels = useMemo(
-    () => resolvePanels(project, previewLayoutWidth, previewLayoutHeight, activeSources),
-    [project, previewLayoutWidth, previewLayoutHeight, activeSources]
+    () =>
+      scalePanelsForPreview(
+        posterPanels,
+        project.canvasWidth,
+        project.canvasHeight,
+        previewLayoutWidth,
+        previewLayoutHeight
+      ),
+    [posterPanels, project.canvasWidth, project.canvasHeight, previewLayoutWidth, previewLayoutHeight]
   );
 
   useEffect(() => {
@@ -175,7 +186,7 @@ export default function App() {
       const startedAt = performance.now();
       setPreviewStatus("生成预览中...");
       try {
-        if (previewPanels.length === 0) {
+        if (posterPanels.length === 0) {
           return;
         }
         const target = previewCanvasRef.current;
@@ -199,7 +210,7 @@ export default function App() {
     }, 50);
 
     return () => window.clearTimeout(handle);
-  }, [screen, activeSources, previewShellSize, project, renderTick, theme]);
+  }, [screen, activeSources, previewShellSize, project, renderTick, theme, previewLayoutWidth, previewLayoutHeight, posterPanels.length]);
 
   const openPicker = (mode: FilePickerMode) => {
     filePickerModeRef.current = mode;
@@ -619,4 +630,29 @@ function normalizePhotoCrops(
   });
 
   return nextPhotoCrops;
+}
+
+function scalePanelsForPreview(
+  panels: ReturnType<typeof resolvePanels>,
+  posterWidth: number,
+  posterHeight: number,
+  previewWidth: number,
+  previewHeight: number
+) {
+  const scale = Math.min(
+    previewWidth / Math.max(1, posterWidth),
+    previewHeight / Math.max(1, posterHeight)
+  );
+  const offsetX = (previewWidth - posterWidth * scale) / 2;
+  const offsetY = (previewHeight - posterHeight * scale) / 2;
+
+  return panels.map((panel) => ({
+    ...panel,
+    rect: {
+      x: Math.round(panel.rect.x * scale + offsetX),
+      y: Math.round(panel.rect.y * scale + offsetY),
+      width: Math.round(panel.rect.width * scale),
+      height: Math.round(panel.rect.height * scale)
+    }
+  }));
 }
