@@ -26,7 +26,6 @@ export const defaultDots: DotSettings = {
   dotCount: 22,
   decorativeCount: 0,
   distribution: "random",
-  brushMode: "same-size",
   fillMode: "image-cutout",
   opacity: 0.98,
   seed: 7,

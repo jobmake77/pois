@@ -89,13 +89,21 @@ function resolveSinglePhotoPanels(
 
   if (direction === "vertical") {
     const fullWidthHeight = contentRect.width / aspectRatio;
-    const panelHeight =
+    const rawPanelHeight =
       fullWidthHeight * 2 + gap <= contentRect.height
         ? fullWidthHeight
         : Math.max(1, (contentRect.height - gap) / 2);
-    const panelWidth = Math.max(1, panelHeight * aspectRatio);
-    const startX = contentRect.x + (contentRect.width - panelWidth) / 2;
-    const startY = contentRect.y + (contentRect.height - (panelHeight * 2 + gap)) / 2;
+    const panelHeight = Math.max(
+      1,
+      Math.min(Math.round(rawPanelHeight), Math.floor((contentRect.height - gap) / 2))
+    );
+    const panelWidth = Math.max(
+      1,
+      Math.min(Math.round(rawPanelHeight * aspectRatio), contentRect.width)
+    );
+    const packedHeight = panelHeight * 2 + gap;
+    const startX = contentRect.x + Math.round((contentRect.width - panelWidth) / 2);
+    const startY = contentRect.y + Math.round((contentRect.height - packedHeight) / 2);
 
     return [
       {
@@ -103,10 +111,10 @@ function resolveSinglePhotoPanels(
         role: "primary",
         kind: "photo",
         rect: {
-          x: Math.round(startX),
-          y: Math.round(startY),
-          width: Math.round(panelWidth),
-          height: Math.round(panelHeight)
+          x: startX,
+          y: startY,
+          width: panelWidth,
+          height: panelHeight
         },
         photoId
       },
@@ -115,10 +123,10 @@ function resolveSinglePhotoPanels(
         role: "secondary",
         kind: fillPhotoId ? "photo" : "fill",
         rect: {
-          x: Math.round(startX),
-          y: Math.round(startY + panelHeight + gap),
-          width: Math.round(panelWidth),
-          height: Math.round(panelHeight)
+          x: startX,
+          y: startY + panelHeight + gap,
+          width: panelWidth,
+          height: panelHeight
         },
         photoId: fillPhotoId
       }
@@ -126,13 +134,21 @@ function resolveSinglePhotoPanels(
   }
 
   const fullHeightWidth = contentRect.height * aspectRatio;
-  const panelWidth =
+  const rawPanelWidth =
     fullHeightWidth * 2 + gap <= contentRect.width
       ? fullHeightWidth
       : Math.max(1, (contentRect.width - gap) / 2);
-  const panelHeight = Math.max(1, panelWidth / aspectRatio);
-  const startX = contentRect.x + (contentRect.width - (panelWidth * 2 + gap)) / 2;
-  const startY = contentRect.y + (contentRect.height - panelHeight) / 2;
+  const panelWidth = Math.max(
+    1,
+    Math.min(Math.round(rawPanelWidth), Math.floor((contentRect.width - gap) / 2))
+  );
+  const panelHeight = Math.max(
+    1,
+    Math.min(Math.round(rawPanelWidth / aspectRatio), contentRect.height)
+  );
+  const packedWidth = panelWidth * 2 + gap;
+  const startX = contentRect.x + Math.round((contentRect.width - packedWidth) / 2);
+  const startY = contentRect.y + Math.round((contentRect.height - panelHeight) / 2);
 
   return [
     {
@@ -140,10 +156,10 @@ function resolveSinglePhotoPanels(
       role: "primary",
       kind: "photo",
       rect: {
-        x: Math.round(startX),
-        y: Math.round(startY),
-        width: Math.round(panelWidth),
-        height: Math.round(panelHeight)
+        x: startX,
+        y: startY,
+        width: panelWidth,
+        height: panelHeight
       },
       photoId
     },
@@ -152,10 +168,10 @@ function resolveSinglePhotoPanels(
       role: "secondary",
       kind: fillPhotoId ? "photo" : "fill",
       rect: {
-        x: Math.round(startX + panelWidth + gap),
-        y: Math.round(startY),
-        width: Math.round(panelWidth),
-        height: Math.round(panelHeight)
+        x: startX + panelWidth + gap,
+        y: startY,
+        width: panelWidth,
+        height: panelHeight
       },
       photoId: fillPhotoId
     }

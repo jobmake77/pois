@@ -20,7 +20,6 @@ import { clamp } from "../render/random";
 import { FILLED_SHAPE_GLYPHS } from "../render/shapeGlyphs";
 import type {
   BaseStyle,
-  BrushMode,
   DotSettings,
   PanelDirection,
   PanelKey,
@@ -1000,16 +999,6 @@ function DotsPanel({
       />
       {value.distribution === "random" ? null : (
         <>
-          <ControlSelect
-            label="画笔方式"
-            value={value.brushMode}
-            options={[
-              { label: "相同形状", value: "same-size" },
-              { label: "由大到小", value: "large-to-small" },
-              { label: "由小到大", value: "small-to-large" }
-            ]}
-            onChange={(next) => onChange({ brushMode: next as BrushMode })}
-          />
           <div className="control-group">
             <label className="control-label">手动画点</label>
             <div className="brush-tools-row">

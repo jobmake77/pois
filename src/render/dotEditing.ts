@@ -1,5 +1,4 @@
 import type {
-  BrushMode,
   Distribution,
   DotPlacement,
   DotPlacementState,
@@ -50,8 +49,7 @@ export function addDotStroke(
   current: DotPlacementState,
   distribution: Distribution,
   target: DotTarget,
-  points: DotPoint[],
-  brushMode: BrushMode
+  points: DotPoint[]
 ): DotPlacementState {
   if (distribution === "random" || points.length === 0) {
     return current;
@@ -68,7 +66,7 @@ export function addDotStroke(
   }
 
   const placements = uniquePoints.map((point, index) =>
-    createDotPlacement(current.nextId + index, point.xRatio, point.yRatio, getSizeMultiplier(index, uniquePoints.length, brushMode))
+    createDotPlacement(current.nextId + index, point.xRatio, point.yRatio, getSizeMultiplier())
   );
   const stroke: DotStroke = {
     id: `stroke-${current.nextStrokeId}`,
@@ -216,16 +214,8 @@ function dedupePoints(points: DotPoint[]) {
   return deduped;
 }
 
-function getSizeMultiplier(index: number, total: number, brushMode: BrushMode) {
-  if (total <= 1 || brushMode === "same-size") {
-    return 1;
-  }
-
-  const progress = total <= 1 ? 1 : index / (total - 1);
-  if (brushMode === "large-to-small") {
-    return lerp(1.22, 0.72, progress);
-  }
-  return lerp(0.72, 1.22, progress);
+function getSizeMultiplier() {
+  return 1;
 }
 
 function clampRatio(value: number) {
@@ -238,10 +228,6 @@ function clampUnit(value: number) {
 
 function clampSizeMultiplier(value: number) {
   return Math.min(1.35, Math.max(0.45, value));
-}
-
-function lerp(start: number, end: number, progress: number) {
-  return start + (end - start) * progress;
 }
 
 function mulberry32(seed: number) {

@@ -11,7 +11,6 @@ export type ShapeKind =
   | "kitty";
 export type BaseStyle = "solid" | "stripes" | "duotone" | "pixel";
 export type Distribution = "random" | "single-side" | "double-side";
-export type BrushMode = "same-size" | "large-to-small" | "small-to-large";
 export type FillMode = "image-cutout" | "color-sample" | "solid";
 export type PanelKey = "layout" | "fill" | "dots";
 export type CanvasPreset = "poster" | "square" | "story" | "landscape";
@@ -55,7 +54,6 @@ export interface DotSettings {
   dotCount: number;
   decorativeCount: number;
   distribution: Distribution;
-  brushMode: BrushMode;
   fillMode: FillMode;
   opacity: number;
   seed: number;

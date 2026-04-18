@@ -69,8 +69,7 @@ function createInitialProject(theme: ThemePreset): ProjectState {
       shape:
         theme.dots.shape === "square" || theme.dots.shape === "text"
           ? "circle"
-          : theme.dots.shape ?? defaultDots.shape,
-      brushMode: defaultDots.brushMode
+          : theme.dots.shape ?? defaultDots.shape
     },
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
@@ -387,8 +386,7 @@ export default function App() {
         current.dotPlacements,
         current.dots.distribution,
         panelRole,
-        points,
-        current.dots.brushMode
+        points
       )
     }));
     setPreviewStatus(
@@ -481,8 +479,7 @@ export default function App() {
                   ? "circle"
                   : resetTheme.dots.shape ?? defaultDots.shape,
               fillMode: current.dots.fillMode,
-              distribution: current.dots.distribution,
-              brushMode: current.dots.brushMode
+              distribution: current.dots.distribution
             }
           }));
         }}

@@ -17,8 +17,7 @@ test("single-side stores a stroke only on the targeted panel", () => {
     [
       { xRatio: 0.34, yRatio: 0.62 },
       { xRatio: 0.42, yRatio: 0.68 }
-    ],
-    "same-size"
+    ]
   );
 
   assert.equal(placements.primary.length, 0);
@@ -36,8 +35,7 @@ test("double-side stores one shared stroke", () => {
     [
       { xRatio: 0.28, yRatio: 0.41 },
       { xRatio: 0.35, yRatio: 0.49 }
-    ],
-    "same-size"
+    ]
   );
 
   assert.equal(placements.primary.length, 0);
@@ -47,8 +45,8 @@ test("double-side stores one shared stroke", () => {
   assert.equal(placements.strokes[0].bucket, "shared");
 });
 
-test("brush size modes write ordered size multipliers", () => {
-  const descending = addDotStroke(
+test("manual strokes always keep the same size multiplier", () => {
+  const placements = addDotStroke(
     createEmptyDotPlacements(),
     "single-side",
     "primary",
@@ -56,23 +54,11 @@ test("brush size modes write ordered size multipliers", () => {
       { xRatio: 0.1, yRatio: 0.2 },
       { xRatio: 0.2, yRatio: 0.3 },
       { xRatio: 0.3, yRatio: 0.4 }
-    ],
-    "large-to-small"
-  );
-  const ascending = addDotStroke(
-    createEmptyDotPlacements(),
-    "single-side",
-    "primary",
-    [
-      { xRatio: 0.1, yRatio: 0.2 },
-      { xRatio: 0.2, yRatio: 0.3 },
-      { xRatio: 0.3, yRatio: 0.4 }
-    ],
-    "small-to-large"
+    ]
   );
 
-  assert.ok((descending.primary[0].sizeMultiplier ?? 0) > (descending.primary[2].sizeMultiplier ?? 0));
-  assert.ok((ascending.primary[0].sizeMultiplier ?? 0) < (ascending.primary[2].sizeMultiplier ?? 0));
+  assert.equal(placements.primary.length, 3);
+  assert.ok(placements.primary.every((dot) => dot.sizeMultiplier === 1));
 });
 
 test("undo removes only the latest stroke", () => {
@@ -82,15 +68,13 @@ test("undo removes only the latest stroke", () => {
     placements,
     "single-side",
     "primary",
-    [{ xRatio: 0.1, yRatio: 0.2 }],
-    "same-size"
+    [{ xRatio: 0.1, yRatio: 0.2 }]
   );
   placements = addDotStroke(
     placements,
     "single-side",
     "primary",
-    [{ xRatio: 0.2, yRatio: 0.3 }],
-    "same-size"
+    [{ xRatio: 0.2, yRatio: 0.3 }]
   );
   placements = undoLastDotStroke(placements);
 
@@ -104,8 +88,7 @@ test("clear removes all manual placements and stroke history", () => {
     createEmptyDotPlacements(),
     "double-side",
     "primary",
-    [{ xRatio: 0.4, yRatio: 0.5 }],
-    "same-size"
+    [{ xRatio: 0.4, yRatio: 0.5 }]
   );
 
   placements = clearDotPlacements(placements);
