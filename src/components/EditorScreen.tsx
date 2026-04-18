@@ -33,6 +33,7 @@ import type {
 interface EditorScreenProps {
   project: ProjectState;
   sources: SourceAsset[];
+  posterBackground: string;
   previewStatus: string;
   renderTime: number | null;
   exportPending: boolean;
@@ -106,6 +107,7 @@ type PhotoPanelModel = {
 export function EditorScreen({
   project,
   sources,
+  posterBackground,
   previewStatus,
   renderTime,
   exportPending,
@@ -226,7 +228,8 @@ export function EditorScreen({
   const viewportHint = "拖动画布平移 / 滚轮缩放 / 双击重置";
 
   const previewShellStyle = {
-    aspectRatio: `${project.canvasWidth} / ${project.canvasHeight}`
+    aspectRatio: `${project.canvasWidth} / ${project.canvasHeight}`,
+    backgroundColor: posterBackground
   } as CSSProperties;
   const transformStyle = {
     transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})`

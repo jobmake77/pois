@@ -359,7 +359,8 @@ function getSamplingSurface(
 }
 
 function getDotSize(input: RenderInput, dot: SharedDot, sizeScale: number) {
-  const baseSize = input.project.dots.useSizeVariance
+  const hasManualBrushScale = typeof dot.sizeMultiplier === "number";
+  const baseSize = input.project.dots.useSizeVariance && !hasManualBrushScale
     ? input.project.dots.dotSize + (dot.varianceSample - 0.5) * input.project.dots.sizeVariance
     : input.project.dots.dotSize;
   return Math.max(10, baseSize * (dot.sizeMultiplier ?? 1) * sizeScale);

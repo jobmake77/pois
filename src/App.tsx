@@ -427,6 +427,7 @@ export default function App() {
       <EditorScreen
         project={project}
         sources={activeSources}
+        posterBackground={theme.palette.surface}
         previewStatus={previewStatus}
         renderTime={renderTime}
         exportPending={exportPending}
