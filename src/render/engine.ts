@@ -33,11 +33,24 @@ export async function renderToCanvas(canvas: HTMLCanvasElement, input: RenderInp
   }
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, targetWidth, targetHeight);
-  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  const scale = Math.min(
+    targetWidth / Math.max(1, input.project.canvasWidth),
+    targetHeight / Math.max(1, input.project.canvasHeight)
+  );
+  const offsetX = (targetWidth - input.project.canvasWidth * scale) / 2;
+  const offsetY = (targetHeight - input.project.canvasHeight * scale) / 2;
+  context.setTransform(
+    scale,
+    0,
+    0,
+    scale,
+    offsetX,
+    offsetY
+  );
   await drawPoster(context, {
     ...input,
-    width,
-    height,
+    width: input.project.canvasWidth,
+    height: input.project.canvasHeight,
     pixelRatio: 1
   });
 }
@@ -385,10 +398,6 @@ function drawSingleDot(
   context.save();
   clipToRect(context, panel.rect);
   context.globalAlpha = input.project.dots.opacity;
-  const rotation = (dot.rotationSeed - 0.5) * 0.72;
-  context.translate(point.x, point.y);
-  context.rotate(rotation);
-  context.translate(-point.x, -point.y);
 
   if (input.project.dots.shape === "text") {
     const fontSize = Math.max(

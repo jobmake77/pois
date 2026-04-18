@@ -39,8 +39,7 @@ interface EditorScreenProps {
   exportPending: boolean;
   activePanel: PanelKey;
   previewShellRef: RefObject<HTMLDivElement>;
-  primaryPreviewRef: RefObject<HTMLCanvasElement>;
-  secondaryPreviewRef: RefObject<HTMLCanvasElement>;
+  previewCanvasRef: RefObject<HTMLCanvasElement>;
   previewPanels: CanvasPanel[];
   onActivePanelChange: (panel: PanelKey) => void;
   onOpenFillPhoto: () => void;
@@ -113,8 +112,7 @@ export function EditorScreen({
   exportPending,
   activePanel,
   previewShellRef,
-  primaryPreviewRef,
-  secondaryPreviewRef,
+  previewCanvasRef,
   previewPanels,
   onActivePanelChange,
   onOpenFillPhoto,
@@ -714,17 +712,16 @@ export function EditorScreen({
                       className="preview-shell reference-preview-shell reference-results-shell"
                       style={previewShellStyle}
                     >
+                      <canvas
+                        ref={previewCanvasRef}
+                        className="preview-canvas preview-poster-canvas"
+                      />
                       {previewPanels.map((panel) => (
                         <div
                           key={panel.id}
                           className={`preview-panel preview-panel-${panel.role} preview-panel-${panel.kind}`}
                           style={getPanelStyle(panel)}
-                        >
-                          <canvas
-                            ref={panel.role === "primary" ? primaryPreviewRef : secondaryPreviewRef}
-                            className="preview-canvas preview-panel-canvas"
-                          />
-                        </div>
+                        />
                       ))}
 
                       {interactiveDotMode
@@ -1033,7 +1030,7 @@ function DotsPanel({
       <ControlRange
         label="点大小"
         min={18}
-        max={58}
+        max={100}
         step={1}
         value={value.dotSize}
         onChange={(next) => onChange({ dotSize: next })}

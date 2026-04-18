@@ -16,7 +16,7 @@ import {
   normalizeDotPlacements,
   undoLastDotStroke
 } from "./render/dotEditing";
-import { renderPanelToCanvas, renderToBlobOnMain } from "./render/engine";
+import { renderToBlobOnMain, renderToCanvas } from "./render/engine";
 import { canUseWorkerExport, exportWithWorker } from "./render/workerClient";
 import type {
   CanvasPreset,
@@ -94,8 +94,7 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewShellRef = useRef<HTMLDivElement>(null);
-  const primaryPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const secondaryPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const filePickerModeRef = useRef<FilePickerMode>("replace-main");
   const sourcesRef = useRef<SourceAsset[]>([]);
 
@@ -179,22 +178,18 @@ export default function App() {
         if (previewPanels.length === 0) {
           return;
         }
-        const renderJobs = previewPanels.map((panel) => {
-          const target =
-            panel.role === "primary" ? primaryPreviewCanvasRef.current : secondaryPreviewCanvasRef.current;
-          if (!target) {
-            return Promise.resolve();
-          }
-          return renderPanelToCanvas(target, {
-            project,
-            theme,
-            sources: activeSources,
-            width: panel.rect.width,
-            height: panel.rect.height,
-            pixelRatio: Math.min(window.devicePixelRatio || 1, 2)
-          }, panel.role, previewPanels);
+        const target = previewCanvasRef.current;
+        if (!target) {
+          return;
+        }
+        await renderToCanvas(target, {
+          project,
+          theme,
+          sources: activeSources,
+          width: previewLayoutWidth,
+          height: previewLayoutHeight,
+          pixelRatio: Math.min(window.devicePixelRatio || 1, 2)
         });
-        await Promise.all(renderJobs);
         setPreviewStatus("预览已更新");
         setRenderTime(performance.now() - startedAt);
       } catch (error) {
@@ -433,8 +428,7 @@ export default function App() {
         exportPending={exportPending}
         activePanel={activePanel}
         previewShellRef={previewShellRef}
-        primaryPreviewRef={primaryPreviewCanvasRef}
-        secondaryPreviewRef={secondaryPreviewCanvasRef}
+        previewCanvasRef={previewCanvasRef}
         previewPanels={previewPanels}
         onActivePanelChange={setActivePanel}
         onOpenFillPhoto={() => openPicker("replace-fill")}
