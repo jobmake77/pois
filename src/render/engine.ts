@@ -420,6 +420,21 @@ function drawSingleDot(
     return;
   }
 
+  if (input.project.dots.shape === "mosaic") {
+    drawMosaicDot(
+      context,
+      input,
+      point,
+      size,
+      color,
+      sampleSurface,
+      samplePoint,
+      1
+    );
+    context.restore();
+    return;
+  }
+
   const path = createShapePath(input.project.dots.shape, point.x, point.y, size);
   context.clip(path);
   if (input.project.dots.fillMode === "image-cutout" && sampleSurface && samplePoint) {
@@ -470,6 +485,22 @@ function drawDecorativeDot(
     context.restore();
     return;
   }
+
+  if (input.project.dots.shape === "mosaic") {
+    drawMosaicDot(
+      context,
+      input,
+      point,
+      size,
+      color,
+      sampleSurface,
+      samplePoint,
+      0.82
+    );
+    context.restore();
+    return;
+  }
+
   const path = createShapePath(input.project.dots.shape, point.x, point.y, size);
   context.clip(path);
   if (input.project.dots.fillMode === "image-cutout" && sampleSurface && samplePoint) {
@@ -640,6 +671,108 @@ function drawTextCutoutFromSurface(
     point.x - textWidth / 2,
     point.y - textHeight / 2
   );
+}
+
+function drawMosaicDot(
+  context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  input: RenderInput,
+  point: { x: number; y: number },
+  size: number,
+  fallbackColor: string,
+  sampleSurface: PanelSurface | undefined,
+  samplePoint: { x: number; y: number } | null,
+  intensity: number
+) {
+  const tileCount = Math.max(7, Math.round(lerp(7, 11, intensity)));
+  const baseTileSize = size / Math.max(2.8, 3.5 - intensity * 0.35);
+  const sourceScale = 0.76 + intensity * 0.26;
+  const sourceWidth = sampleSurface && samplePoint ? Math.max(size * 1.06, size * sourceScale) : 0;
+  const sourceHeight = sampleSurface && samplePoint ? Math.max(size * 1.06, size * sourceScale) : 0;
+  const sourceLeft = sampleSurface && samplePoint
+    ? clamp(samplePoint.x - sourceWidth / 2, 0, sampleSurface.width - sourceWidth)
+    : 0;
+  const sourceTop = sampleSurface && samplePoint
+    ? clamp(samplePoint.y - sourceHeight / 2, 0, sampleSurface.height - sourceHeight)
+    : 0;
+
+  const tiles = createMosaicTiles(point, size, baseTileSize, tileCount, intensity);
+  tiles.forEach((tile) => {
+    context.fillStyle = getMosaicTileColor(
+      input,
+      fallbackColor,
+      sampleSurface,
+      sourceLeft,
+      sourceTop,
+      sourceWidth,
+      sourceHeight,
+      tile
+    );
+    context.fillRect(tile.x, tile.y, tile.width, tile.height);
+  });
+}
+
+function createMosaicTiles(
+  point: { x: number; y: number },
+  size: number,
+  baseTileSize: number,
+  tileCount: number,
+  intensity: number
+) {
+  const tiles: Array<{ x: number; y: number; width: number; height: number; sampleX: number; sampleY: number }> = [];
+  const radius = size * (0.34 + intensity * 0.08);
+
+  for (let index = 0; index < tileCount; index += 1) {
+    const seed = hashNoise(point.x * 0.073 + index * 1.37, point.y * 0.061 + index * 2.11);
+    const angle = seed * Math.PI * 2;
+    const distance = radius * Math.pow(hashNoise(seed * 9.1, index * 0.73 + point.x * 0.01), 0.82);
+    const width = baseTileSize * lerp(0.72, 1.26, hashNoise(seed * 4.2, 0.17 + index));
+    const height = baseTileSize * lerp(0.68, 1.22, hashNoise(seed * 5.4, 0.49 + index));
+    const centerX = point.x + Math.cos(angle) * distance + (hashNoise(seed * 7.3, point.y * 0.01) - 0.5) * baseTileSize * 0.4;
+    const centerY = point.y + Math.sin(angle) * distance + (hashNoise(seed * 8.1, point.x * 0.01) - 0.5) * baseTileSize * 0.4;
+    const overlapShiftX = (hashNoise(seed * 11.7, index * 0.31) - 0.5) * width * 0.24;
+    const overlapShiftY = (hashNoise(seed * 13.3, index * 0.53) - 0.5) * height * 0.24;
+
+    tiles.push({
+      x: centerX - width / 2 + overlapShiftX,
+      y: centerY - height / 2 + overlapShiftY,
+      width: Math.max(2, width),
+      height: Math.max(2, height),
+      sampleX: clamp(0.5 + (centerX - point.x) / Math.max(1, size * 0.92), 0.08, 0.92),
+      sampleY: clamp(0.5 + (centerY - point.y) / Math.max(1, size * 0.92), 0.08, 0.92)
+    });
+  }
+
+  tiles.sort((left, right) => left.width * left.height - right.width * right.height);
+  return tiles;
+}
+
+function getMosaicTileColor(
+  input: RenderInput,
+  fallbackColor: string,
+  sampleSurface: PanelSurface | undefined,
+  sourceLeft: number,
+  sourceTop: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  tile: { sampleX: number; sampleY: number }
+) {
+  if (input.project.dots.fillMode === "solid" || !sampleSurface) {
+    return fallbackColor;
+  }
+
+  const px = sourceLeft + sourceWidth * tile.sampleX;
+  const py = sourceTop + sourceHeight * tile.sampleY;
+
+  if (input.project.dots.fillMode === "image-cutout" || input.project.dots.fillMode === "color-sample") {
+    return sampleCanvasColor(sampleSurface.canvas, px, py);
+  }
+
+  return fallbackColor;
+}
+
+function hashNoise(x: number, y: number) {
+  const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  return value - Math.floor(value);
 }
 
 function createScratchSurface(width: number, height: number) {

@@ -16,6 +16,7 @@ import {
   normalizeDotPlacements,
   undoLastDotStroke
 } from "./render/dotEditing";
+import { createRandomSeed } from "./render/dotSeed";
 import { renderToBlobOnMain, renderToCanvas } from "./render/engine";
 import { canUseWorkerExport, exportWithWorker } from "./render/workerClient";
 import type {
@@ -412,6 +413,17 @@ export default function App() {
     setPreviewStatus("已清空手动画点");
   };
 
+  const handleRerollRandomDots = () => {
+    setProject((current) => ({
+      ...current,
+      dots: {
+        ...current.dots,
+        seed: createRandomSeed(current.dots.seed)
+      }
+    }));
+    setPreviewStatus("已重新生成随机波点");
+  };
+
   return (
     <div className="app-shell">
       <input
@@ -445,6 +457,7 @@ export default function App() {
         onCommitDotStroke={handleCommitDotStroke}
         onUndoDotStroke={handleUndoDotStroke}
         onClearDotStroke={handleClearDotStroke}
+        onRerollRandomDots={handleRerollRandomDots}
         manualDotCount={getManualDotCount(project.dotPlacements)}
         canUndoDotStroke={project.dotPlacements.strokes.length > 0}
         onSetPanelDirection={(panelDirection) =>

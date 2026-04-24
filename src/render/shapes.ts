@@ -15,6 +15,11 @@ export function createShapePath(
     return path;
   }
 
+  if (shape === "mosaic") {
+    appendMosaicPath(path, x, y, size);
+    return path;
+  }
+
   if (shape === "square") {
     path.rect(x - half, y - half, size, size);
     return path;
@@ -127,4 +132,27 @@ function appendGlyphPath(
     .translateSelf(x - size / 2, y - size / 2)
     .scaleSelf(scale, scale);
   path.addPath(sourcePath, transform);
+}
+
+function appendMosaicPath(path: Path2D, x: number, y: number, size: number) {
+  const left = x - size / 2;
+  const top = y - size / 2;
+  const unit = size / 4;
+  const blocks = [
+    { x: 0.2, y: 0.45, w: 1.25, h: 1.05 },
+    { x: 1.15, y: 0.1, w: 1.35, h: 1.2 },
+    { x: 2.4, y: 0.6, w: 1.05, h: 1.05 },
+    { x: 0.7, y: 1.75, w: 1.15, h: 1.15 },
+    { x: 1.85, y: 1.45, w: 1.45, h: 1.35 },
+    { x: 1.3, y: 2.85, w: 1.2, h: 0.9 }
+  ];
+
+  blocks.forEach((block) => {
+    path.rect(
+      left + block.x * unit,
+      top + block.y * unit,
+      block.w * unit,
+      block.h * unit
+    );
+  });
 }

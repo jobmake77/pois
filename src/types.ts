@@ -4,6 +4,7 @@ export type ShapeKind =
   | "drop"
   | "snowflake"
   | "circle"
+  | "mosaic"
   | "square"
   | "text"
   | "heart"

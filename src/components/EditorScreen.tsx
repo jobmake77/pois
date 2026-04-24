@@ -49,6 +49,7 @@ interface EditorScreenProps {
   ) => void;
   onUndoDotStroke: () => void;
   onClearDotStroke: () => void;
+  onRerollRandomDots: () => void;
   manualDotCount: number;
   canUndoDotStroke: boolean;
   onSetPanelDirection: (panelDirection: PanelDirection) => void;
@@ -119,6 +120,7 @@ export function EditorScreen({
   onCommitDotStroke,
   onUndoDotStroke,
   onClearDotStroke,
+  onRerollRandomDots,
   manualDotCount,
   canUndoDotStroke,
   onSetPanelDirection,
@@ -804,6 +806,7 @@ export function EditorScreen({
               onChange={onUpdateDots}
               onUndo={onUndoDotStroke}
               onClear={onClearDotStroke}
+              onReroll={onRerollRandomDots}
             />
           </div>
         </aside>
@@ -922,7 +925,8 @@ function DotsPanel({
   canUndo,
   onChange,
   onUndo,
-  onClear
+  onClear,
+  onReroll
 }: {
   value: DotSettings;
   manualDotCount: number;
@@ -930,12 +934,14 @@ function DotsPanel({
   onChange: (patch: Partial<DotSettings>) => void;
   onUndo: () => void;
   onClear: () => void;
+  onReroll: () => void;
 }) {
   const shapeSwatches = [
     { key: "star", label: "五角星" },
     { key: "drop", label: "水滴" },
     { key: "snowflake", label: "雪花" },
     { key: "circle", label: "圆形" },
+    { key: "mosaic", label: "马赛克" },
     { key: "text", label: "文本" },
     { key: "heart", label: "爱心" },
     { key: "butterfly", label: "花朵" },
@@ -997,7 +1003,16 @@ function DotsPanel({
         ]}
         onChange={(next) => onChange({ distribution: next as DotSettings["distribution"] })}
       />
-      {value.distribution === "random" ? null : (
+      {value.distribution === "random" ? (
+        <div className="control-group">
+          <label className="control-label">随机点位</label>
+          <div className="brush-tools-row">
+            <button type="button" className="secondary-button compact" onClick={onReroll}>
+              随机一下
+            </button>
+          </div>
+        </div>
+      ) : (
         <>
           <div className="control-group">
             <label className="control-label">手动画点</label>
@@ -1127,6 +1142,17 @@ function ShapeSwatchGlyph({ kind }: { kind: ShapeKind }) {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
         <circle cx="12" cy="12" r="6.4" className="shape-swatch-fill" />
+      </svg>
+    );
+  }
+
+  if (kind === "mosaic") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="shape-swatch-svg">
+        <path
+          d="M5.5 8.3h5v4.7h-5zM10.2 4.7h5.3V10h-5.3zM15.1 9h3.8v4h-3.8zM7.4 12.6h4.1v4.2H7.4zM11.8 11.6h5.7v5.4h-5.7zM10.7 17.4h4.8v2.9h-4.8z"
+          className="shape-swatch-fill"
+        />
       </svg>
     );
   }
