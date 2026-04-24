@@ -7,7 +7,9 @@ import type {
   WheelEvent as ReactWheelEvent
 } from "react";
 import {
+  Bell,
   Download,
+  Film,
   Upload
 } from "lucide-react";
 import type { CanvasPanel } from "../render/blockLayout";
@@ -21,9 +23,11 @@ import { FILLED_SHAPE_GLYPHS } from "../render/shapeGlyphs";
 import type {
   BaseStyle,
   DotSettings,
+  ExtractedPaletteColor,
   PanelDirection,
   PanelKey,
   PhotoCrop,
+  ProductUpdateItem,
   ProjectState,
   ShapeKind,
   SourceAsset
@@ -32,10 +36,13 @@ import type {
 interface EditorScreenProps {
   project: ProjectState;
   sources: SourceAsset[];
+  paletteColors: ExtractedPaletteColor[];
+  productUpdates: ProductUpdateItem[];
   posterBackground: string;
   previewStatus: string;
   renderTime: number | null;
   exportPending: boolean;
+  animationExportPending: boolean;
   activePanel: PanelKey;
   previewShellRef: RefObject<HTMLDivElement>;
   previewCanvasRef: RefObject<HTMLCanvasElement>;
@@ -57,6 +64,8 @@ interface EditorScreenProps {
   onUpdateBase: (patch: Partial<ProjectState["base"]>) => void;
   onUpdateDots: (patch: Partial<DotSettings>) => void;
   onExport: () => void;
+  onExportAnimation: () => void;
+  onCopyPaletteColor: (color: string) => void;
   onBack: () => void;
 }
 
@@ -106,10 +115,13 @@ type PhotoPanelModel = {
 export function EditorScreen({
   project,
   sources,
+  paletteColors,
+  productUpdates,
   posterBackground,
   previewStatus,
   renderTime,
   exportPending,
+  animationExportPending,
   activePanel,
   previewShellRef,
   previewCanvasRef,
@@ -128,6 +140,8 @@ export function EditorScreen({
   onUpdateBase,
   onUpdateDots,
   onExport,
+  onExportAnimation,
+  onCopyPaletteColor,
   onBack
 }: EditorScreenProps) {
   const gestureRef = useRef<GestureState>({
@@ -171,6 +185,7 @@ export function EditorScreen({
     y: 0,
     scale: 1
   });
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const brushStrokeRef = useRef<BrushStrokeState>({
     active: false,
@@ -649,6 +664,28 @@ export function EditorScreen({
         </div>
 
         <div className="editor-header-actions">
+          <div className="reference-notification-shell">
+            <button
+              type="button"
+              className="secondary-button compact reference-notification-trigger"
+              onClick={() => setReleaseNotesOpen((current) => !current)}
+              aria-expanded={releaseNotesOpen}
+              aria-label="查看最近更新"
+            >
+              <Bell size={14} />
+              <span>更新</span>
+              <span className="reference-notification-count">{Math.min(productUpdates.length, 9)}</span>
+            </button>
+            {releaseNotesOpen ? <ProductUpdatesPanel updates={productUpdates} /> : null}
+          </div>
+          <button
+            className="secondary-button compact reference-action"
+            onClick={onExportAnimation}
+            disabled={animationExportPending}
+          >
+            <Film size={14} />
+            <span>{animationExportPending ? "导出动画中..." : "导出动画"}</span>
+          </button>
           <button
             className="primary-button compact reference-primary-action"
             onClick={onExport}
@@ -660,7 +697,40 @@ export function EditorScreen({
         </div>
       </header>
 
-      <section className="editor-main editor-reference-main">
+      <section className={`editor-main editor-reference-main ${paletteColors.length > 0 ? "has-palette" : ""}`}>
+        {paletteColors.length > 0 ? (
+          <aside className="palette-rail">
+            <div className="palette-rail-card">
+              <div className="panel-section-head">
+                <span className="panel-kicker">Palette</span>
+                <h2>主色提取</h2>
+              </div>
+              <div className="palette-swatch-column">
+                {paletteColors.map((color, index) => (
+                  <button
+                    key={`${color.hex}-${index}`}
+                    type="button"
+                    className="palette-swatch-button"
+                    onClick={() => {
+                      if (navigator.clipboard?.writeText) {
+                        void navigator.clipboard.writeText(color.hex);
+                      }
+                      onCopyPaletteColor(color.hex);
+                    }}
+                    title={`${color.hex} · ${(color.weight * 100).toFixed(1)}%`}
+                  >
+                    <span
+                      className="palette-swatch-dot"
+                      style={{ backgroundColor: color.hex }}
+                    />
+                    <span className="palette-swatch-label">{color.hex}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+        ) : null}
+
         <div className="canvas-column reference-canvas-pane">
           <div className="reference-preview-status-row">
             <div className="reference-status-cluster">
@@ -812,6 +882,48 @@ export function EditorScreen({
         </aside>
       </section>
     </main>
+  );
+}
+
+function ProductUpdatesPanel({ updates }: { updates: ProductUpdateItem[] }) {
+  if (updates.length === 0) {
+    return (
+      <div className="reference-notification-panel">
+        <div className="reference-notification-empty">暂无最近更新</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="reference-notification-panel">
+      <div className="reference-notification-head">
+        <strong>最近更新</strong>
+        <span>这些变化会直接影响你的编辑体验</span>
+      </div>
+      <div className="reference-notification-list">
+        {updates.map((update) => (
+          <article key={update.id} className="reference-note-item">
+            <div className="reference-note-topline">
+              <span
+                className={`reference-note-tag ${
+                  update.category === "新功能"
+                    ? "is-add"
+                    : update.category === "体验优化"
+                      ? "is-enhancement"
+                      : "is-change"
+                }`}
+              >
+                {update.category}
+              </span>
+              <span className="reference-note-area">{update.area}</span>
+            </div>
+            <strong>{update.title}</strong>
+            <p>{update.description}</p>
+            <span>{update.date}</span>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 

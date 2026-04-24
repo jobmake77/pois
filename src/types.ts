@@ -15,7 +15,7 @@ export type Distribution = "random" | "single-side" | "double-side";
 export type FillMode = "image-cutout" | "color-sample" | "solid";
 export type PanelKey = "layout" | "fill" | "dots";
 export type CanvasPreset = "poster" | "square" | "story" | "landscape";
-export type ExportFormat = "png";
+export type ExportFormat = "png" | "webm";
 export type LayoutMode = "single" | "double";
 export type PanelDirection = "horizontal" | "vertical";
 export type LayoutDirection = PanelDirection;
@@ -32,6 +32,21 @@ export interface SourceAsset {
   aspectRatio: number;
   image: CanvasImageSource;
   dominantColor: string;
+  palette?: ExtractedPaletteColor[];
+}
+
+export interface ExtractedPaletteColor {
+  hex: string;
+  weight: number;
+}
+
+export interface ProductUpdateItem {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  category: "新功能" | "体验优化" | "问题修复";
+  area: "波点" | "颜色" | "导出" | "界面";
 }
 
 export interface LayoutSettings {

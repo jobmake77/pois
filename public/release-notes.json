@@ -1,0 +1,107 @@
+[
+  {
+    "sha": "b371c7c8306f02d04de7ca0337c08bb2bc7c16b9",
+    "shortSha": "b371c7c",
+    "subject": "Add mosaic dots and reroll control",
+    "date": "2026-04-24",
+    "category": "新增"
+  },
+  {
+    "sha": "18417b3fccb85ff92c22a9102b9ab889d1a06d57",
+    "shortSha": "18417b3",
+    "subject": "Fix panel seam and remove brush mode options",
+    "date": "2026-04-18",
+    "category": "修改"
+  },
+  {
+    "sha": "67c3f96a33ab65ea0624feae79f371d19a04e45d",
+    "shortSha": "67c3f96",
+    "subject": "Fix brush hit testing near poster edges",
+    "date": "2026-04-18",
+    "category": "修改"
+  },
+  {
+    "sha": "cdceffb60061617c4e0cb4808a8e2f63d0cda515",
+    "shortSha": "cdceffb",
+    "subject": "Unify preview rendering with export",
+    "date": "2026-04-18",
+    "category": "修改"
+  },
+  {
+    "sha": "3ff366b67778a6bca4a0e96e62507e9ad184f459",
+    "shortSha": "3ff366b",
+    "subject": "Align preview export rendering and cleanup leftovers",
+    "date": "2026-04-18",
+    "category": "修改"
+  },
+  {
+    "sha": "9f0b143f6cc4144803a564587f212817c5bc3663",
+    "shortSha": "9f0b143",
+    "subject": "Fix preview export alignment and dot sizing",
+    "date": "2026-04-18",
+    "category": "修改"
+  },
+  {
+    "sha": "88b6b8f032626488761c4553793122217c370ef2",
+    "shortSha": "88b6b8f",
+    "subject": "Add POiS brand logo assets",
+    "date": "2026-04-17",
+    "category": "新增"
+  },
+  {
+    "sha": "caa5f84661b7b6d42be9fb3eaf3de782097bf506",
+    "shortSha": "caa5f84",
+    "subject": "Refine editor flow and export UX",
+    "date": "2026-04-17",
+    "category": "修改"
+  },
+  {
+    "sha": "2332d6df1736121d2d61be4137052e8553b4c8d7",
+    "shortSha": "2332d6d",
+    "subject": "Implement direct editor flow and dot editing updates",
+    "date": "2026-04-17",
+    "category": "新增"
+  },
+  {
+    "sha": "4d795930e49259759ce2a3f441a89ad86cebd91f",
+    "shortSha": "4d79593",
+    "subject": "Fix color swap functionality and add text dot feature",
+    "date": "2026-04-14",
+    "category": "新增"
+  },
+  {
+    "sha": "bbf1b5fdbd7e987dbea21b1eb9a5df7dca1620f5",
+    "shortSha": "bbf1b5f",
+    "subject": "Implement cross-region dot swap, original export, and seamless layout",
+    "date": "2026-04-10",
+    "category": "新增"
+  },
+  {
+    "sha": "55100d5ea6085ab799b9840b643f06b49de49e56",
+    "shortSha": "55100d5",
+    "subject": "Polish editor UI and crop interactions",
+    "date": "2026-04-08",
+    "category": "修改"
+  },
+  {
+    "sha": "2db2a98015a7c42e1819d393efdd06ef40ed7157",
+    "shortSha": "2db2a98",
+    "subject": "Refine canvas editor interaction model",
+    "date": "2026-04-08",
+    "category": "修改"
+  },
+  {
+    "sha": "d999afd0adea95f8dd881ee816ccdc955b041cf9",
+    "shortSha": "d999afd",
+    "subject": "Build Pois Art web prototype",
+    "date": "2026-04-07",
+    "category": "修改"
+  },
+  {
+    "sha": "5f8d98d619d186a752bbd59c2f1a77ba6a95a343",
+    "shortSha": "5f8d98d",
+    "subject": "Initial commit",
+    "date": "2026-04-07",
+    "category": "修改"
+  }
+]

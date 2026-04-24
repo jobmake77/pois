@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorScreen } from "./components/EditorScreen";
+import { productUpdates } from "./content/productUpdates";
 import {
   defaultBase,
   defaultDots,
@@ -16,7 +17,9 @@ import {
   normalizeDotPlacements,
   undoLastDotStroke
 } from "./render/dotEditing";
+import { exportDotAnimation } from "./render/animationExport";
 import { createRandomSeed } from "./render/dotSeed";
+import { extractPaletteFromImage } from "./render/palette";
 import { renderToBlobOnMain, renderToCanvas } from "./render/engine";
 import { canUseWorkerExport, exportWithWorker } from "./render/workerClient";
 import type {
@@ -89,6 +92,7 @@ export default function App() {
   const [previewStatus, setPreviewStatus] = useState("等待图片上传");
   const [renderTime, setRenderTime] = useState<number | null>(null);
   const [exportPending, setExportPending] = useState(false);
+  const [animationExportPending, setAnimationExportPending] = useState(false);
   const [renderTick, setRenderTick] = useState(0);
   const [previewShellSize, setPreviewShellSize] = useState({ width: 0, height: 0 });
 
@@ -126,6 +130,11 @@ export default function App() {
       ),
     [posterPanels, project.canvasWidth, project.canvasHeight, previewLayoutWidth, previewLayoutHeight]
   );
+  const activeMainSource = useMemo(
+    () => (project.photoIds[0] ? activeSources.find((source) => source.id === project.photoIds[0]) ?? null : null),
+    [activeSources, project.photoIds]
+  );
+  const extractedPalette = activeMainSource?.palette ?? [];
 
   useEffect(() => {
     sourcesRef.current = sources;
@@ -348,6 +357,36 @@ export default function App() {
     }
   };
 
+  const handleExportAnimation = async () => {
+    if (activeSources.length === 0) {
+      return;
+    }
+
+    setAnimationExportPending(true);
+    setPreviewStatus("正在生成动画...");
+
+    try {
+      const result = await exportDotAnimation({
+        project: {
+          ...project,
+          exportFormat: "webm"
+        },
+        theme,
+        sources: activeSources,
+        width: project.canvasWidth,
+        height: project.canvasHeight,
+        pixelRatio: 1
+      });
+      downloadBlob(result.blob, `pois-live-${Date.now()}.webm`);
+      setPreviewStatus("动画已下载");
+    } catch (error) {
+      console.error(error);
+      setPreviewStatus("动画导出失败");
+    } finally {
+      setAnimationExportPending(false);
+    }
+  };
+
   const updatePhotoCrop = (photoId: string, nextCrop: PhotoCrop) => {
     setProject((current) => {
       const source = sourcesRef.current.find((item) => item.id === photoId);
@@ -443,10 +482,13 @@ export default function App() {
       <EditorScreen
         project={project}
         sources={activeSources}
+        paletteColors={extractedPalette}
+        productUpdates={productUpdates}
         posterBackground={theme.palette.surface}
         previewStatus={previewStatus}
         renderTime={renderTime}
         exportPending={exportPending}
+        animationExportPending={animationExportPending}
         activePanel={activePanel}
         previewShellRef={previewShellRef}
         previewCanvasRef={previewCanvasRef}
@@ -515,6 +557,10 @@ export default function App() {
           }))
         }
         onExport={() => void handleExport()}
+        onExportAnimation={() => void handleExportAnimation()}
+        onCopyPaletteColor={(color) => {
+          setPreviewStatus(`${color} 已复制`);
+        }}
         onBack={() => openPicker("replace-main")}
       />
     </div>
@@ -525,7 +571,8 @@ async function loadSourceAsset(file: File): Promise<SourceAsset> {
   const objectUrl = URL.createObjectURL(file);
   try {
     const image = await loadImage(objectUrl);
-    const dominantColor = await extractDominantColor(image);
+    const palette = await extractPaletteFromImage(image, 6);
+    const dominantColor = palette[0]?.hex ?? "#999999";
     return {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       name: file.name,
@@ -535,7 +582,8 @@ async function loadSourceAsset(file: File): Promise<SourceAsset> {
       height: image.naturalHeight,
       aspectRatio: image.naturalWidth / image.naturalHeight,
       image,
-      dominantColor
+      dominantColor,
+      palette
     };
   } catch (error) {
     URL.revokeObjectURL(objectUrl);
@@ -550,29 +598,6 @@ function loadImage(src: string) {
     image.onerror = () => reject(new Error("Image failed to load."));
     image.src = src;
   });
-}
-
-async function extractDominantColor(image: HTMLImageElement) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 32;
-  canvas.height = 32;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return "#999999";
-  }
-  context.drawImage(image, 0, 0, 32, 32);
-  const { data } = context.getImageData(0, 0, 32, 32);
-  let red = 0;
-  let green = 0;
-  let blue = 0;
-  let count = 0;
-  for (let index = 0; index < data.length; index += 4) {
-    red += data[index];
-    green += data[index + 1];
-    blue += data[index + 2];
-    count += 1;
-  }
-  return `rgb(${Math.round(red / count)}, ${Math.round(green / count)}, ${Math.round(blue / count)})`;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
