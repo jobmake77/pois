@@ -369,7 +369,7 @@ export default function App() {
       const result = await exportDotAnimation({
         project: {
           ...project,
-          exportFormat: "webm"
+          exportFormat: "mp4"
         },
         theme,
         sources: activeSources,
@@ -377,8 +377,8 @@ export default function App() {
         height: project.canvasHeight,
         pixelRatio: 1
       });
-      downloadBlob(result.blob, `pois-live-${Date.now()}.webm`);
-      setPreviewStatus("动画已下载");
+      downloadBlob(result.blob, `pois-live-${Date.now()}.mp4`);
+      setPreviewStatus("MP4 动画已下载");
     } catch (error) {
       console.error(error);
       setPreviewStatus("动画导出失败");

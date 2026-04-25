@@ -1,17 +1,26 @@
+import {
+  BufferTarget,
+  CanvasSource,
+  Mp4OutputFormat,
+  Output,
+  QUALITY_HIGH,
+  canEncodeVideo
+} from "mediabunny";
 import type { RenderInput, RenderOutput } from "../types";
 import { renderToCanvas } from "./engine";
 import { createAnimationProject, getAnimationDotCount } from "./dotAnimation";
 
 const DEFAULT_FPS = 24;
+const FINAL_HOLD_FRAMES = 18;
+const MP4_CODEC_CANDIDATES = ["avc", "hevc", "av1"] as const;
 
 export async function exportDotAnimation(input: RenderInput): Promise<RenderOutput> {
-  if (typeof document === "undefined" || typeof MediaRecorder === "undefined") {
+  if (
+    typeof document === "undefined" ||
+    typeof HTMLCanvasElement === "undefined" ||
+    typeof VideoEncoder === "undefined"
+  ) {
     throw new Error("Animation export is unavailable in this browser.");
-  }
-
-  const mimeType = getSupportedMimeType();
-  if (!mimeType) {
-    throw new Error("This browser does not support WebM recording.");
   }
 
   const totalDots = getAnimationDotCount(input.project);
@@ -19,44 +28,56 @@ export async function exportDotAnimation(input: RenderInput): Promise<RenderOutp
     throw new Error("No dots available for animation export.");
   }
 
-  const canvas = document.createElement("canvas");
-  const stream = canvas.captureStream(DEFAULT_FPS);
-  const recorder = new MediaRecorder(stream, {
-    mimeType,
-    videoBitsPerSecond: 5_000_000
-  });
-  const chunks: BlobPart[] = [];
-  const startedAt = performance.now();
-
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) {
-      chunks.push(event.data);
-    }
-  };
-
-  const stopped = new Promise<Blob>((resolve, reject) => {
-    recorder.onerror = () => reject(new Error("Animation recording failed."));
-    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
-  });
-
-  recorder.start();
-
-  await renderAnimationFrame(canvas, input, 0);
-  await waitForFrame(DEFAULT_FPS);
-
-  for (let visibleDotCount = 1; visibleDotCount <= totalDots; visibleDotCount += 1) {
-    await renderAnimationFrame(canvas, input, visibleDotCount);
-    requestAnimationFrameOnTrack(stream);
-    await waitForFrame(DEFAULT_FPS);
+  const codec = await getSupportedMp4Codec();
+  if (!codec) {
+    throw new Error("This browser does not support MP4 animation export.");
   }
 
-  await waitForFrame(DEFAULT_FPS, 18);
-  recorder.stop();
-  stopStream(stream);
+  const canvas = document.createElement("canvas");
+  const target = new BufferTarget();
+  const output = new Output({
+    format: new Mp4OutputFormat(),
+    target
+  });
+  const source = new CanvasSource(canvas, {
+    codec,
+    bitrate: QUALITY_HIGH,
+    keyFrameInterval: 1,
+    latencyMode: "quality"
+  });
+  const totalFrames = totalDots + 1 + FINAL_HOLD_FRAMES;
+  const startedAt = performance.now();
 
-  const blob = await stopped;
+  output.addVideoTrack(source, {
+    frameRate: DEFAULT_FPS,
+    maximumPacketCount: totalFrames
+  });
+
+  await output.start();
+
+  await renderAnimationFrame(canvas, input, 0);
+  await source.add(0, 1 / DEFAULT_FPS);
+
+  let frameIndex = 1;
+  for (let visibleDotCount = 1; visibleDotCount <= totalDots; visibleDotCount += 1) {
+    await renderAnimationFrame(canvas, input, visibleDotCount);
+    await source.add(frameIndex / DEFAULT_FPS, 1 / DEFAULT_FPS);
+    frameIndex += 1;
+  }
+
+  for (let holdFrame = 0; holdFrame < FINAL_HOLD_FRAMES; holdFrame += 1) {
+    await source.add(frameIndex / DEFAULT_FPS, 1 / DEFAULT_FPS);
+    frameIndex += 1;
+  }
+
+  await output.finalize();
+
+  if (!target.buffer) {
+    throw new Error("MP4 export did not produce any data.");
+  }
+
   return {
-    blob,
+    blob: new Blob([target.buffer], { type: "video/mp4" }),
     width: input.project.canvasWidth,
     height: input.project.canvasHeight,
     durationMs: performance.now() - startedAt
@@ -78,28 +99,12 @@ async function renderAnimationFrame(
   });
 }
 
-function getSupportedMimeType() {
-  const candidates = [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm"
-  ];
+async function getSupportedMp4Codec() {
+  for (const codec of MP4_CODEC_CANDIDATES) {
+    if (await canEncodeVideo(codec, { width: 1280, height: 720, bitrate: 5_000_000 })) {
+      return codec;
+    }
+  }
 
-  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? null;
-}
-
-function requestAnimationFrameOnTrack(stream: MediaStream) {
-  const [track] = stream.getVideoTracks();
-  const candidate = track as MediaStreamTrack & { requestFrame?: () => void };
-  candidate.requestFrame?.();
-}
-
-function stopStream(stream: MediaStream) {
-  stream.getTracks().forEach((track) => track.stop());
-}
-
-function waitForFrame(fps: number, frameCount = 1) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, (1000 / fps) * frameCount);
-  });
+  return null;
 }

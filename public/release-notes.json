@@ -1,5 +1,12 @@
 [
   {
+    "sha": "b2fbf65f03da383b26325cbfd47f56d5c08d8e60",
+    "shortSha": "b2fbf65",
+    "subject": "Add updates panel palette rail and webm export",
+    "date": "2026-04-24",
+    "category": "新增"
+  },
+  {
     "sha": "b371c7c8306f02d04de7ca0337c08bb2bc7c16b9",
     "shortSha": "b371c7c",
     "subject": "Add mosaic dots and reroll control",

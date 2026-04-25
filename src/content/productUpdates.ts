@@ -26,9 +26,9 @@ export const productUpdates: ProductUpdateItem[] = [
     area: "颜色"
   },
   {
-    id: "webm-export",
+    id: "mp4-export",
     title: "新增波点生成过程动画导出",
-    description: "除了 PNG 之外，现在还可以导出展示波点逐步生成过程的 WebM 动画。",
+    description: "除了 PNG 之外，现在还可以导出展示波点逐步生成过程的 MP4 动画。",
     date: "2026.04.24",
     category: "新功能",
     area: "导出"
