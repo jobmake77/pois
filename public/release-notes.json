@@ -1,5 +1,12 @@
 [
   {
+    "sha": "cb70a5438a26722ab9e3ec97ea825ebfe3146c72",
+    "shortSha": "cb70a54",
+    "subject": "Switch animation export to MP4",
+    "date": "2026-04-25",
+    "category": "修改"
+  },
+  {
     "sha": "b2fbf65f03da383b26325cbfd47f56d5c08d8e60",
     "shortSha": "b2fbf65",
     "subject": "Add updates panel palette rail and webm export",
